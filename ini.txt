@@ -1,0 +1,7 @@
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python scripts/fetch_binance_ohlcv.py --symbol BTC/USDT --timeframe 1m --since "2023-01-01 00:00:00"
+python train_mm_sac.py --total_timesteps 200000 --device mps
+python tune_mm_sac.py --n_trials 30 --train_timesteps 100000 --episode_length 600 --eval_episode_length 600 --eval_episodes 5 --save_best_params --device mps
+python train_mm_sac.py --mode tuned --total_timesteps 1000000 --device mps

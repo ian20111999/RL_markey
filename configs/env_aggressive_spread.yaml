@@ -1,0 +1,39 @@
+env:
+  csv_path: "data/btc_usdt_1m_2023.csv"
+  episode_length: 900
+  fee_rate: 0.0005
+  lambda_inv: 0.0012
+  lambda_turnover: 0.0005
+  max_inventory: 8.0
+  base_spread: 1.2
+  alpha: 0.4
+  beta: 0.7
+  random_start: true
+
+train:
+  algo: "SAC"
+  total_timesteps: 400000
+  learning_rate: 0.00035
+  gamma: 0.988
+  batch_size: 512
+  tau: 0.015
+  train_freq: 1
+  gradient_steps: 2
+  buffer_size: 300000
+  eval_freq: 9000
+  net_arch: [256, 256, 128]
+  seed: 77
+  deterministic_eval: true
+  log_interval: 4500
+
+run:
+  short_name: "env_aggressive_spread"
+  notes: "較窄 spread + 較高 beta，探測高頻策略"
+
+data_split:
+  train_start: "2023-01-01"
+  train_end:   "2023-06-30"
+  valid_start: "2023-07-01"
+  valid_end:   "2023-09-30"
+  test_start:  "2023-10-01"
+  test_end:    "2023-12-31"
