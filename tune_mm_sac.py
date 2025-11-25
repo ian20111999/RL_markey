@@ -223,39 +223,45 @@ class PruningCallback(BaseCallback):
 
 
 def objective(trial: optuna.Trial, args: argparse.Namespace) -> float:
-    """單一 trial：取樣參數 -> 訓練 -> 驗證並回傳績效。"""
-
+    """單一 trial：取樣參數 -> 訓練 -> 驗證並回傳績效。
+    
+    優化：固定 Base Seed + 多次評估取平均，增加結果穩定性。
+    """
     hyperparams = suggest_hyperparams(trial)
     env_cfg = env_section_from_args(args)
     env_kwargs = build_env_kwargs(env_cfg, root_dir=ROOT)
     
+    # 固定 Seed：使用 base_seed + trial.number，確保可重現
+    base_seed = getattr(args, 'base_seed', 42)
+    trial_seed = base_seed + trial.number
+    
     # 優化：使用 SubprocVecEnv 進行多進程並行採樣
-    # 根據 CPU 核心數決定並行數量，這裡保守設為 4
     n_envs = 4
-    env_fns = [
-        make_env(
-            env_kwargs=env_kwargs,
-            seed=trial.number * n_envs + i,
-            random_start=args.random_start,
-        )
-        for i in range(n_envs)
-    ]
-    train_env = SubprocVecEnv(env_fns)
+    
+    def make_train_env_fn(i):
+        def _init():
+            local_kwargs = dict(env_kwargs)
+            local_kwargs["random_start"] = args.random_start
+            local_kwargs["seed"] = trial_seed * n_envs + i
+            return Monitor(HistoricalMarketMakingEnv(**local_kwargs))
+        return _init
+    
+    train_env = SubprocVecEnv([make_train_env_fn(i) for i in range(n_envs)])
 
-    # 優化：建立持久化評估環境 (平行化)
+    # 建立評估環境
     n_eval_envs = args.eval_episodes
     eval_kwargs = dict(env_kwargs)
     eval_kwargs["episode_length"] = args.eval_episode_length
     
-    eval_env_fns = [
-        make_env(
-            env_kwargs=eval_kwargs,
-            seed=trial.number * 200 + i,
-            random_start=True
-        )
-        for i in range(n_eval_envs)
-    ]
-    eval_env = SubprocVecEnv(eval_env_fns)
+    def make_eval_env_fn(i):
+        def _init():
+            local_kwargs = dict(eval_kwargs)
+            local_kwargs["random_start"] = True
+            local_kwargs["seed"] = trial_seed * 200 + i
+            return Monitor(HistoricalMarketMakingEnv(**local_kwargs))
+        return _init
+    
+    eval_env = SubprocVecEnv([make_eval_env_fn(i) for i in range(n_eval_envs)])
 
     model = SAC(
         policy="MlpPolicy",
@@ -268,12 +274,12 @@ def objective(trial: optuna.Trial, args: argparse.Namespace) -> float:
         train_freq=args.train_freq,
         gradient_steps=args.gradient_steps,
         policy_kwargs=hyperparams["policy_kwargs"],
+        seed=trial_seed,  # 固定 Model Seed
         device=args.device,
         verbose=0,
     )
 
     # 設定 Pruning Callback
-    # 頻率設為總步數的 1/4，即評估 4 次
     eval_freq = max(args.train_timesteps // 4, 1000)
     pruning_callback = PruningCallback(
         trial=trial,
@@ -292,19 +298,35 @@ def objective(trial: optuna.Trial, args: argparse.Namespace) -> float:
     
     train_env.close()
 
-    score = evaluate_model(
-        model=model,
-        eval_env=eval_env,
-        n_episodes=n_eval_envs,
-        metric=args.metric,
-    )
+    # 多次評估取平均，增加穩定性
+    n_eval_runs = getattr(args, 'n_eval_runs', 3)
+    scores = []
+    for run_idx in range(n_eval_runs):
+        # 重置評估環境的 Seed
+        score = evaluate_model(
+            model=model,
+            eval_env=eval_env,
+            n_episodes=n_eval_envs,
+            metric=args.metric,
+        )
+        scores.append(score)
+    
     eval_env.close()
-    return score
+    
+    avg_score = float(np.mean(scores))
+    std_score = float(np.std(scores))
+    
+    # 記錄到 Trial 的 User Attributes
+    trial.set_user_attr("score_std", std_score)
+    trial.set_user_attr("scores", scores)
+    
+    return avg_score
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="使用 Optuna 搜尋 SAC 超參數")
     parser.add_argument("--config", type=Path, default=None, help="YAML/JSON 設定檔，用於覆寫 env/train 參數")
+    parser.add_argument("--exp_dir", type=Path, default=None, help="實驗根目錄，tuning 輸出在其下")
     parser.add_argument("--csv_path", type=Path, default=DEFAULT_CSV)
     parser.add_argument("--episode_length", type=int, default=600, help="tuning 訓練時的 episode 長度")
     parser.add_argument("--fee_rate", type=float, default=0.0004)
@@ -317,12 +339,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--random_start", dest="random_start", action="store_true", help="預設從隨機位置開始 episode")
     parser.add_argument("--fixed_start", dest="random_start", action="store_false", help="固定從資料開頭開始 episode")
     parser.set_defaults(random_start=True)
+    parser.add_argument("--base_seed", type=int, default=42, help="固定的隨機種子基準值")
     parser.add_argument("--train_timesteps", type=int, default=50_000)
     parser.add_argument("--buffer_size", type=int, default=50_000)
     parser.add_argument("--train_freq", type=int, default=1)
     parser.add_argument("--gradient_steps", type=int, default=1)
     parser.add_argument("--eval_episode_length", type=int, default=600)
     parser.add_argument("--eval_episodes", type=int, default=5)
+    parser.add_argument("--n_eval_runs", type=int, default=3, help="每個 Trial 評估幾次取平均")
     parser.add_argument("--metric", choices=["portfolio", "reward"], default="portfolio")
     parser.add_argument("--n_trials", type=int, default=30)
     parser.add_argument("--study_name", type=str, default="mm_sac_optuna")

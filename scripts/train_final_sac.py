@@ -2,14 +2,16 @@
 流程：
 1. 讀取 env_v2.yaml
 2. 讀取 best_sac_params.json (若有)
-3. 執行長時訓練 (e.g. 500k steps)
+3. 執行長時訓練 (e.g. 500k steps) + Early Stopping
 4. 儲存最終模型
 5. 執行最終評估 (RL vs Baseline)
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import shutil
 import sys
 from pathlib import Path
 from typing import Any, Dict, Tuple
@@ -17,8 +19,9 @@ from typing import Any, Dict, Tuple
 import numpy as np
 import pandas as pd
 from stable_baselines3 import SAC
+from stable_baselines3.common.callbacks import EvalCallback, StopTrainingOnNoModelImprovement
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.vec_env import SubprocVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 
 # Add project root to path
 ROOT = Path(__file__).resolve().parent.parent
@@ -72,8 +75,9 @@ def rollout_episode(model: Any, env_kwargs: Dict[str, Any], seed: int) -> Dict[s
         "max_drawdown": max_drawdown(pv_array),
     }
 
-def evaluate_agent(agent: Any, agent_name: str, env_kwargs: Dict[str, Any], n_episodes: int) -> Dict[str, float]:
-    print(f"正在評估 {agent_name} ({n_episodes} episodes)...")
+def evaluate_agent(agent: Any, agent_name: str, env_kwargs: Dict[str, Any], n_episodes: int, quiet: bool = False) -> Dict[str, float]:
+    if not quiet:
+        print(f"正在評估 {agent_name} ({n_episodes} episodes)...")
     metrics_accum = {"net_pnl": [], "gross_pnl": [], "sharpe": [], "max_drawdown": []}
     for i in range(n_episodes):
         res = rollout_episode(agent, env_kwargs, seed=20000 + i)
@@ -90,37 +94,67 @@ def main():
     parser.add_argument("--config", type=Path, required=True, help="環境設定檔")
     parser.add_argument("--params", type=Path, default=ROOT / "models" / "best_sac_params.json", help="最佳超參數 JSON")
     parser.add_argument("--output_dir", type=Path, default=ROOT / "runs" / "final_env_v2_sac", help="輸出目錄")
+    parser.add_argument("--seed", type=int, default=42, help="隨機種子")
+    parser.add_argument("--quiet", action="store_true", help="減少輸出訊息")
     args = parser.parse_args()
+
+    verbose = 0 if args.quiet else 1
 
     # 1. Load Config & Params
     config = load_config(args.config)
     env_cfg = config.env
-    train_cfg = config.train
+    train_cfg = dict(config.train)  # 複製一份以便修改
     
     # Load Best Params if exists
     if args.params.exists():
-        print(f"📥 載入最佳超參數: {args.params}")
+        if not args.quiet:
+            print(f"📥 載入最佳超參數: {args.params}")
         with open(args.params, "r", encoding="utf-8") as f:
             best_params = json.load(f)
         # Override train_cfg
         for k, v in best_params.items():
-            if k == "policy_kwargs": # Handle policy_kwargs separately if needed, but usually it's net_arch
+            if k == "policy_kwargs":
                  if "net_arch" in v:
                      train_cfg["net_arch"] = v["net_arch"]
+            elif k == "net_arch":
+                # Handle direct net_arch from Optuna (string like "256x2")
+                if isinstance(v, str):
+                    net_arch_map = {"64x2": [64, 64], "128x2": [128, 128], "256x2": [256, 256]}
+                    train_cfg["net_arch"] = net_arch_map.get(v, [256, 256])
+                else:
+                    train_cfg["net_arch"] = v
             else:
                 train_cfg[k] = v
     else:
-        print("⚠️ 未找到最佳超參數檔案，將使用 Config 預設值進行訓練。")
+        if not args.quiet:
+            print("⚠️ 未找到最佳超參數檔案，將使用 Config 預設值進行訓練。")
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     export_config(config, args.output_dir / "config.yaml")
+    
+    # 鎖定 Config Hash
+    with open(args.config, 'rb') as f:
+        config_hash = hashlib.md5(f.read()).hexdigest()
+    with open(args.output_dir / "config_hash.txt", 'w') as f:
+        f.write(config_hash)
 
     # 2. Setup Env
-    train_env_kwargs = build_env_kwargs(env_cfg, root_dir=ROOT, seed=train_cfg.get("seed"))
+    seed = args.seed
+    train_env_kwargs = build_env_kwargs(env_cfg, root_dir=ROOT, seed=seed)
     n_envs = 4
-    train_env = SubprocVecEnv([
-        lambda: Monitor(HistoricalMarketMakingEnv(**train_env_kwargs)) for _ in range(n_envs)
-    ])
+    
+    def make_train_env(seed_offset):
+        def _init():
+            kwargs = dict(train_env_kwargs)
+            kwargs["seed"] = seed + seed_offset
+            return Monitor(HistoricalMarketMakingEnv(**kwargs))
+        return _init
+    
+    train_env = SubprocVecEnv([make_train_env(i) for i in range(n_envs)])
+    
+    # Setup Eval Env for Early Stopping
+    eval_env_kwargs = build_env_kwargs(env_cfg, root_dir=ROOT, seed=seed + 100)
+    eval_env = DummyVecEnv([lambda: Monitor(HistoricalMarketMakingEnv(**eval_env_kwargs))])
 
     # 3. Setup Model
     policy_kwargs = {}
@@ -138,23 +172,55 @@ def main():
         train_freq=train_cfg.get("train_freq", 1),
         gradient_steps=train_cfg.get("gradient_steps", 1),
         policy_kwargs=policy_kwargs,
-        verbose=1,
+        seed=seed,
+        verbose=verbose,
         device="auto"
     )
 
-    # 4. Train (Long)
-    # 預設 500k steps，或從 config 讀取
+    # 4. Setup Callbacks for Early Stopping
+    stop_callback = StopTrainingOnNoModelImprovement(
+        max_no_improvement_evals=10,  # Final 用更耐心的設定
+        min_evals=10,
+        verbose=verbose
+    )
+    
     total_timesteps = train_cfg.get("total_timesteps", 500000)
-    print(f"🚀 開始最終長訓 (Steps: {total_timesteps})...")
-    model.learn(total_timesteps=total_timesteps, log_interval=100)
+    
+    eval_callback = EvalCallback(
+        eval_env,
+        best_model_save_path=str(args.output_dir / "best_model"),
+        log_path=str(args.output_dir / "eval_logs"),
+        eval_freq=max(total_timesteps // 50, 5000),  # 評估 50 次
+        n_eval_episodes=5,
+        callback_after_eval=stop_callback,
+        deterministic=True,
+        verbose=verbose
+    )
+
+    # 5. Train with Early Stopping
+    if not args.quiet:
+        print(f"🚀 開始最終長訓 (Up to {total_timesteps} steps, Early Stopping enabled)...")
+    
+    model.learn(total_timesteps=total_timesteps, callback=eval_callback, log_interval=100 if not args.quiet else 0)
+    
+    train_env.close()
+    eval_env.close()
+    
+    # Load best model if available
+    best_model_path = args.output_dir / "best_model" / "best_model.zip"
+    if best_model_path.exists():
+        if not args.quiet:
+            print("📥 Loading best model from Early Stopping...")
+        model = SAC.load(best_model_path)
     
     model_path = args.output_dir / "model.zip"
     model.save(model_path)
-    print(f"✅ 最終模型已儲存至 {model_path}")
-    train_env.close()
+    if not args.quiet:
+        print(f"✅ 最終模型已儲存至 {model_path}")
 
-    # 5. Final Evaluation
-    print("\n📊 執行最終評估 (Test Set)...")
+    # 6. Final Evaluation
+    if not args.quiet:
+        print("\n📊 執行最終評估 (Test Set)...")
     test_split = config.data_split
     test_date_range = (test_split.get("test_start"), test_split.get("test_end"))
     test_env_kwargs = build_env_kwargs(env_cfg, root_dir=ROOT, date_range=test_date_range)
@@ -166,14 +232,16 @@ def main():
     
     results = []
     for name, agent in agents.items():
-        metrics = evaluate_agent(agent, name, test_env_kwargs, n_episodes=10) # 跑多一點
+        metrics = evaluate_agent(agent, name, test_env_kwargs, n_episodes=10, quiet=args.quiet)
         metrics["agent"] = name
         results.append(metrics)
         
     df = pd.DataFrame(results)
     df = df[["agent", "net_pnl", "gross_pnl", "sharpe", "max_drawdown"]]
-    print("\n🏆 最終評估結果:")
-    print(df.to_string(index=False))
+    
+    if not args.quiet:
+        print("\n🏆 最終評估結果:")
+        print(df.to_string(index=False))
     
     df.to_csv(args.output_dir / "final_eval_summary.csv", index=False)
 

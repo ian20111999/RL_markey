@@ -34,10 +34,23 @@ train:
   net_arch: [256, 256]
 
 sanity_criteria:
-  min_rl_net_pnl: -500.0
-  min_rl_vs_random_ratio: 1.2
+  # 絕對門檻（必須通過）
+  min_rl_net_pnl: 100.0                # RL 在 Test 段淨利至少要為正
+  
+  # 相對門檻（用差值而非比率，避免 Random/Baseline 為負時的問題）
+  min_rl_vs_random_gap: 500.0          # RL 淨利要比 Random 高至少 500
+  min_rl_vs_baseline_gap: -200.0       # RL 淨利可以略低於 Baseline（容許 200 差距）
+  
+  # 舊參數保留相容性（新邏輯會優先使用 gap）
+  min_rl_vs_random_ratio: 1.0
   min_rl_vs_baseline_ratio: 0.7
+  
+  # 重試設定
   max_retries: 3
+  
+  # 進階條件
+  require_positive_sharpe: false       # 是否強制 Sharpe > 0
+  skip_tuning_if_exceed_baseline: 1.2  # 若 RL > Baseline * 此倍數，可跳過 Tuning
 
 data_split:
   train_start: "2023-01-01"
