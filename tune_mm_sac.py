@@ -58,23 +58,48 @@ def apply_config_overrides(args: argparse.Namespace) -> None:
         return
     cfg = load_config(args.config)
     env_cfg = cfg.env
-    for key in [
-        "csv_path",
-        "episode_length",
-        "fee_rate",
-        "lambda_inv",
-        "lambda_turnover",
-        "max_inventory",
-        "base_spread",
-        "alpha",
-        "beta",
-        "random_start",
-    ]:
+    
+    # Handle v2 config mapping
+    if "data_file" in env_cfg:
+        args.csv_path = Path(env_cfg["data_file"])
+    elif "csv_path" in env_cfg:
+        args.csv_path = Path(env_cfg["csv_path"])
+        
+    if "max_episode_steps" in env_cfg:
+        args.episode_length = env_cfg["max_episode_steps"]
+    elif "episode_length" in env_cfg:
+        args.episode_length = env_cfg["episode_length"]
+        
+    if "fee" in env_cfg:
+        args.fee_rate = env_cfg["fee"]
+    elif "fee_rate" in env_cfg:
+        args.fee_rate = env_cfg["fee_rate"]
+        
+    # Nested features
+    if "inventory_features" in env_cfg:
+        inv = env_cfg["inventory_features"]
+        if "max_inventory" in inv:
+            args.max_inventory = inv["max_inventory"]
+        if "lambda_inventory" in inv:
+            args.lambda_inv = inv["lambda_inventory"]
+    else:
+        if "max_inventory" in env_cfg:
+            args.max_inventory = env_cfg["max_inventory"]
+        if "lambda_inv" in env_cfg:
+            args.lambda_inv = env_cfg["lambda_inv"]
+            
+    if "spread_features" in env_cfg:
+        spr = env_cfg["spread_features"]
+        if "base_spread" in spr:
+            args.base_spread = spr["base_spread"]
+    elif "base_spread" in env_cfg:
+        args.base_spread = env_cfg["base_spread"]
+
+    # Other flat params
+    for key in ["lambda_turnover", "alpha", "beta", "random_start"]:
         if key in env_cfg:
-            value = env_cfg[key]
-            if key == "csv_path":
-                value = Path(value)
-            setattr(args, key, value)
+            setattr(args, key, env_cfg[key])
+
     train_cfg = cfg.train
     mapping = {
         "total_timesteps": "train_timesteps",

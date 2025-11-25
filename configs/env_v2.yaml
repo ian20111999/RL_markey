@@ -1,0 +1,46 @@
+env:
+  id: "HistoricalMarketMaking-v2"
+  data_file: "data/btc_usdt_1m_2023.csv"
+  initial_balance: 10000.0
+  fee: 0.0004
+  maker_fee: -0.0001
+  max_position: 5.0
+  max_episode_steps: 10080
+  window_size: 60
+  reward_config:
+    method: "damped_pnl"
+    damp_factor: 0.1
+    risk_aversion: 0.05
+    inventory_penalty: 0.005
+  # Fixed Environment Parameters (from Scan)
+  spread_features:
+    base_spread: 25.0
+    min_spread: 5.0
+    max_spread: 200.0
+    vol_multiplier: 2.0
+  inventory_features:
+    max_inventory: 5.0
+    lambda_inventory: 0.0005
+
+train:
+  total_timesteps: 100000
+  learning_rate: 0.0003
+  batch_size: 256
+  buffer_size: 200000
+  gamma: 0.99
+  tau: 0.02
+  train_freq: 1
+  gradient_steps: 1
+  net_arch: [256, 256]
+
+sanity_criteria:
+  min_rl_net_pnl: -500.0
+  min_rl_vs_random_ratio: 1.2
+  min_rl_vs_baseline_ratio: 0.7
+  max_retries: 3
+
+data_split:
+  train_start: "2023-01-01"
+  train_end: "2023-06-30"
+  test_start: "2023-07-01"
+  test_end: "2023-08-31"

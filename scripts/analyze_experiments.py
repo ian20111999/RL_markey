@@ -53,7 +53,12 @@ def collect_runs(runs_dir: Path) -> List[Dict[str, object]]:
             if not run_dir.is_dir():
                 continue
             config_path = find_config_file(run_dir)
-            metrics_path = run_dir / "metrics.json"
+            
+            # 優先讀取 evaluation/metrics.json，若無則讀取根目錄 metrics.json
+            metrics_path = run_dir / "evaluation" / "metrics.json"
+            if not metrics_path.exists():
+                metrics_path = run_dir / "metrics.json"
+            
             if not config_path or not metrics_path.exists():
                 continue
             cfg = load_config(config_path)

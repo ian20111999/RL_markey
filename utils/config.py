@@ -113,12 +113,40 @@ def build_env_kwargs(
         params.update(defaults)
     params.update(env_cfg or {})
 
+    # Handle v2 config structure mapping
+    # Map data_file -> csv_path
+    if "data_file" in params:
+        params["csv_path"] = params["data_file"]
+    
+    # Map max_episode_steps -> episode_length
+    if "max_episode_steps" in params:
+        params["episode_length"] = params["max_episode_steps"]
+        
+    # Map fee -> fee_rate
+    if "fee" in params:
+        params["fee_rate"] = params["fee"]
+
+    # Map nested features
+    if "inventory_features" in params and isinstance(params["inventory_features"], dict):
+        inv_feats = params["inventory_features"]
+        if "max_inventory" in inv_feats:
+            params["max_inventory"] = inv_feats["max_inventory"]
+        if "lambda_inventory" in inv_feats:
+            params["lambda_inv"] = inv_feats["lambda_inventory"]
+            
+    if "spread_features" in params and isinstance(params["spread_features"], dict):
+        spread_feats = params["spread_features"]
+        if "base_spread" in spread_feats:
+            params["base_spread"] = spread_feats["base_spread"]
+
     csv_path = Path(params.get("csv_path", DEFAULT_ENV_PARAMS["csv_path"]))
     if not csv_path.is_absolute():
         csv_path = root_dir / csv_path
 
     resolved_random_start = random_start if random_start is not None else params.get("random_start", True)
 
+    # Only pass arguments that HistoricalMarketMakingEnv accepts
+    # Note: If the Env is updated to support more v2 params, add them here.
     kwargs = {
         "csv_path": str(csv_path),
         "episode_length": int(params.get("episode_length", DEFAULT_ENV_PARAMS["episode_length"])),

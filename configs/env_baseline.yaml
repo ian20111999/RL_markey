@@ -1,11 +1,11 @@
 env:
   csv_path: "data/btc_usdt_1m_2023.csv"
   episode_length: 1000
-  fee_rate: 0.0006
-  lambda_inv: 0.001
+  fee_rate: 0.0004
+  lambda_inv: 0.0002
   lambda_turnover: 0.0
   max_inventory: 10.0
-  base_spread: 2.0
+  base_spread: 25.0
   alpha: 0.5
   beta: 0.5
   random_start: true

@@ -110,6 +110,11 @@ class HistoricalMarketMakingEnv(gym.Env):
         self.last_portfolio_value = 0.0
         self.mid = self.init_mid
 
+        # 累積統計
+        self.cum_gross_pnl = 0.0
+        self.cum_fees = 0.0
+        self.cum_penalty_inv = 0.0
+
     # ------------------------------------------------------------------
     def _get_obs(self) -> np.ndarray:
         mid = float(self.closes[self.current_step])
@@ -140,6 +145,11 @@ class HistoricalMarketMakingEnv(gym.Env):
         self.last_portfolio_value = 0.0
         self.mid = float(self.closes[self.current_step])
 
+        # 累積統計重置
+        self.cum_gross_pnl = 0.0
+        self.cum_fees = 0.0
+        self.cum_penalty_inv = 0.0
+
         obs = self._get_obs()
         return obs, {}
 
@@ -166,19 +176,27 @@ class HistoricalMarketMakingEnv(gym.Env):
         fill_ask = self._simulate_fill(side="ask", price=ask, mid=mid, extreme=high)
         inventory_change = 0
         trades_count = 0
+        
+        # 本 step 的費用與毛利計算
+        fee_t = 0.0
+        gross_pnl_t = 0.0  # 包含價格變動帶來的持倉損益 + 交易帶來的現金流變動 (不含手續費)
 
         # 限制 inventory，避免 agent 無限制累積倉位造成爆倉
         if fill_bid.filled and self.inventory + 1 <= self.max_inventory:
             self.inventory += 1
             self.cash -= fill_bid.price
-            self.cash -= self.fee_rate * abs(fill_bid.price)
+            fee = self.fee_rate * abs(fill_bid.price)
+            self.cash -= fee
+            fee_t += fee
             inventory_change += 1
             trades_count += 1
 
         if fill_ask.filled and self.inventory - 1 >= -self.max_inventory:
             self.inventory -= 1
             self.cash += fill_ask.price
-            self.cash -= self.fee_rate * abs(fill_ask.price)
+            fee = self.fee_rate * abs(fill_ask.price)
+            self.cash -= fee
+            fee_t += fee
             inventory_change -= 1
             trades_count += 1
 
@@ -189,9 +207,24 @@ class HistoricalMarketMakingEnv(gym.Env):
         self.mid = float(self.closes[self.current_step])
 
         portfolio_value = self.cash + self.inventory * self.mid
-        # ΔPnL 代表當前步驟的損益變化，扣除 inventory 懲罰可鼓勵 agent 控制倉位
+        
+        # 計算本 step 的各項損益
+        # delta_pnl 是總資產變化 (含手續費)
         delta_pnl = portfolio_value - self.last_portfolio_value
-        reward = delta_pnl - self.lambda_inv * abs(self.inventory) - self.lambda_turnover * trades_count
+        
+        # gross_pnl_t = delta_pnl + fee_t (把手續費加回來就是毛利)
+        gross_pnl_t = delta_pnl + fee_t
+        
+        penalty_inv_t = self.lambda_inv * abs(self.inventory)
+        
+        # 累積
+        self.cum_gross_pnl += gross_pnl_t
+        self.cum_fees += fee_t
+        self.cum_penalty_inv += penalty_inv_t
+
+        # Reward: 淨損益 - 庫存懲罰 - 刷單懲罰
+        # delta_pnl 已經扣過 fee 了，所以這裡是 Net PnL - Penalty
+        reward = delta_pnl - penalty_inv_t - self.lambda_turnover * trades_count
         self.last_portfolio_value = portfolio_value
 
         obs = self._get_obs()
@@ -204,6 +237,13 @@ class HistoricalMarketMakingEnv(gym.Env):
             "step": self.t,
             "trades_count": trades_count,
         }
+        
+        if terminated:
+            info["episode_gross_pnl"] = self.cum_gross_pnl
+            info["episode_fees"] = self.cum_fees
+            info["episode_penalty_inv"] = self.cum_penalty_inv
+            info["episode_net_pnl"] = self.cum_gross_pnl - self.cum_fees - self.cum_penalty_inv
+
         return obs, reward, terminated, False, info
 
     # ------------------------------------------------------------------
@@ -244,11 +284,21 @@ class HistoricalMarketMakingEnv(gym.Env):
             dt_series = pd.to_datetime(df["timestamp"], unit="ms")
         else:
             raise ValueError("CSV 缺少 datetime/timestamp 欄位，無法依日期切割。")
+        
+        # 處理時區問題：若資料有時區，則將 start/end 也轉為同區
+        tz = getattr(dt_series.dt, "tz", None)
+        
         mask = pd.Series(True, index=df.index)
         if start:
-            mask &= dt_series >= pd.to_datetime(start)
+            s_ts = pd.to_datetime(start)
+            if tz is not None and s_ts.tzinfo is None:
+                s_ts = s_ts.tz_localize(tz)
+            mask &= dt_series >= s_ts
         if end:
-            mask &= dt_series <= pd.to_datetime(end)
+            e_ts = pd.to_datetime(end)
+            if tz is not None and e_ts.tzinfo is None:
+                e_ts = e_ts.tz_localize(tz)
+            mask &= dt_series <= e_ts
         sliced = df.loc[mask].copy()
         if sliced.empty:
             raise ValueError("日期範圍過窄，切割後沒有資料。")
