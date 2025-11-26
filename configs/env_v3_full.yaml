@@ -1,0 +1,209 @@
+# =============================================================================
+# V3 完整配置檔
+# 包含所有新功能的選項
+# =============================================================================
+
+# 資料配置
+data:
+  path: "data/btc_usdt_1m_2023.csv"
+  timestamp_col: "timestamp"
+  price_col: "close"
+
+# 資料分割
+data_split:
+  train_start: null          # null = 從頭開始
+  train_end: 0.7             # 70% 訓練
+  valid_start: 0.7
+  valid_end: 0.85            # 15% 驗證
+  test_start: 0.85
+  test_end: null             # null = 到結尾
+
+# 環境配置
+env:
+  # 基本參數
+  initial_cash: 100000
+  fee_rate: 0.0004
+  max_inventory: 10.0
+  episode_length: 1000
+  lookback: 60
+  base_spread: 25.0
+  random_start: true
+  
+  # Reward 配置
+  reward_config:
+    mode: "hybrid"             # dense, sparse, shaped, hybrid
+    inventory_penalty: 0.0005  # lambda for potential-based shaping
+    turnover_penalty: 0.0      # lambda for turnover penalty
+    gamma: 0.99                # discount factor for shaping
+    sparse_scale: 0.01
+    terminal_bonus_weight: 0.5
+  
+  # Observation 配置
+  obs_config:
+    include_volatility: true
+    include_momentum: true
+    include_time_features: true
+    include_volume: true
+    include_inventory_age: true
+    volatility_windows: [5, 15, 60]
+    momentum_windows: [5, 15]
+  
+  # Action 配置
+  action_config:
+    mode: "asymmetric"         # symmetric, asymmetric, discrete
+    allow_no_quote: true
+    spread_range: [0.0001, 0.01]
+    quantity_range: [0.0, 1.0]
+  
+  # Domain Randomization
+  domain_randomization:
+    enabled: true
+    fee_rate_range: [0.0003, 0.0005]
+    base_spread_range: [20.0, 35.0]
+    volatility_multiplier_range: [0.8, 1.2]
+    fill_probability_noise: 0.1
+
+# 訓練配置
+train:
+  # 基本參數
+  total_timesteps: 500000
+  n_envs: 4
+  eval_freq: 10000
+  n_eval_episodes: 5
+  
+  # 演算法參數 (SAC 預設)
+  learning_rate: 0.0003
+  buffer_size: 200000
+  batch_size: 256
+  gamma: 0.99
+  tau: 0.02
+  train_freq: 1
+  gradient_steps: 1
+  ent_coef: "auto"
+  
+  # 網路架構
+  net_arch: [256, 256]
+  
+  # Early Stopping
+  early_stopping:
+    enabled: true
+    patience: 10
+    min_delta: 0.0
+
+# 課程學習配置
+curriculum:
+  enabled: false
+  difficulty: "normal"         # easy, normal, aggressive
+  stages:
+    - name: "easy"
+      env_params:
+        fee_rate: 0.0002
+        base_spread: 40.0
+        max_inventory: 3.0
+      advancement_threshold: 50.0
+      min_episodes: 50
+    
+    - name: "medium"
+      env_params:
+        fee_rate: 0.0003
+        base_spread: 30.0
+        max_inventory: 5.0
+      advancement_threshold: 30.0
+      min_episodes: 100
+    
+    - name: "hard"
+      env_params:
+        fee_rate: 0.0004
+        base_spread: 25.0
+        max_inventory: 10.0
+      advancement_threshold: 0.0
+      min_episodes: 0
+
+# 風險敏感訓練配置
+risk_sensitive:
+  enabled: false
+  risk_lambda: 0.1             # 風險厭惡係數
+  risk_type: "variance"        # variance, downside_variance, cvar
+  window_size: 100
+  cvar_alpha: 0.05
+
+# 集成學習配置
+ensemble:
+  enabled: false
+  n_models: 3
+  method: "voting"             # voting, weighted, diversity
+  diversity_seeds: [42, 43, 44]
+
+# Sanity Check 標準
+sanity_criteria:
+  min_rl_net_pnl: -500         # RL 最低 PnL
+  min_rl_vs_random_gap: 100    # RL 必須比 Random 好多少
+  min_rl_vs_baseline_gap: -100 # RL 可以比 Baseline 差多少
+  skip_tuning_if_exceed_baseline: 1.5  # 超過 Baseline 幾倍則跳過 Tuning
+
+# 回測配置
+backtest:
+  n_episodes: 20
+  monte_carlo:
+    enabled: true
+    n_simulations: 1000
+    n_periods: 252
+  walk_forward:
+    enabled: true
+    train_window_days: 30
+    test_window_days: 7
+    step_days: 7
+  robustness:
+    enabled: true
+    test_slippage: [0, 1, 2, 5, 10]
+    test_fee_rates: [0.0001, 0.0002, 0.0004, 0.0006, 0.001]
+
+# 可解釋性配置
+explainability:
+  enabled: false
+  n_samples: 500
+  methods: ["permutation", "noise"]
+  feature_names:
+    - "mid_price_norm"
+    - "inventory_norm"
+    - "time_frac"
+    - "time_sin"
+    - "time_cos"
+    - "volatility_5"
+    - "volatility_15"
+    - "volatility_60"
+    - "momentum_5"
+    - "momentum_15"
+    - "log_volume"
+    - "volume_ratio"
+    - "inventory_age"
+
+# 線上適應配置
+online_adaptation:
+  enabled: false
+  regime_detection:
+    lookback: 100
+    volatility_threshold: 0.02
+    trend_threshold: 0.005
+  strategy_blending: true
+  blend_window: 10
+
+# 輸出配置
+output:
+  save_model: true
+  save_logs: true
+  save_plots: true
+  tensorboard: true
+
+# 實驗註解
+notes: |
+  V3 配置檔包含所有進階功能：
+  - Potential-based Reward Shaping
+  - 擴展的 Observation/Action 空間
+  - Domain Randomization
+  - Curriculum Learning
+  - Risk-Sensitive Training
+  - Ensemble Methods
+  - Walk-Forward Backtesting
+  - Policy Explainability
+  - Online Regime Adaptation

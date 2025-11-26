@@ -1,4 +1,0 @@
-configs/env_baseline.yaml
-configs/env_turnover_penalty.yaml
-configs/env_aggressive_spread.yaml
-configs/env_conservative_inventory.yaml

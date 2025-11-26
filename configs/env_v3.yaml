@@ -1,0 +1,180 @@
+# =============================================================================
+# MarketMakingEnvV2 配置檔案 (v3)
+# 完整的改良版環境配置
+# =============================================================================
+
+# 基礎環境設定
+env:
+  id: "MarketMakingEnvV2"
+  data_file: "data/btc_usdt_1m_2023.csv"
+  
+  # 基本參數
+  episode_length: 1440              # 1 天 = 1440 分鐘
+  initial_cash: 10000.0
+  max_inventory: 5.0
+  random_start: true
+  
+  # 市場參數（可被 Domain Randomization 覆寫）
+  fee_rate: 0.0004
+  base_spread: 25.0
+
+# =============================================================================
+# Reward 配置
+# =============================================================================
+reward:
+  # 模式選擇：dense | sparse | shaped | hybrid
+  mode: "shaped"
+  
+  # Potential-based Shaping 參數
+  lambda_inventory: 0.0005          # 庫存懲罰係數（用於 potential function）
+  lambda_turnover: 0.0001           # 刷單懲罰
+  gamma: 0.99                       # 折扣因子（用於 potential shaping）
+  
+  # Sparse 模式參數
+  sparse_scale: 0.01                # Sparse reward 縮放
+  
+  # Hybrid 模式參數
+  terminal_bonus_weight: 0.3        # Terminal bonus 權重
+
+# =============================================================================
+# Observation 配置
+# =============================================================================
+observation:
+  # 特徵開關
+  include_price: true
+  include_inventory: true
+  include_time: true
+  include_volatility: true
+  include_momentum: true
+  include_volume: true
+  include_inventory_age: true
+  
+  # 波動率計算窗口（分鐘）
+  volatility_windows: [5, 15, 60]
+  
+  # 動量計算窗口（分鐘）
+  momentum_windows: [5, 15]
+
+# =============================================================================
+# Action 配置
+# =============================================================================
+action:
+  # 模式選擇：symmetric | asymmetric | discrete
+  mode: "asymmetric"
+  
+  # 是否允許不報價
+  allow_no_quote: true
+  
+  # 價差倍數範圍
+  max_spread_multiplier: 3.0
+  min_spread_multiplier: 0.3
+
+# =============================================================================
+# Domain Randomization 配置
+# =============================================================================
+domain_randomization:
+  # 訓練時啟用，測試時關閉
+  enabled: true
+  
+  # 隨機化範圍
+  fee_rate_range: [0.0003, 0.0005]
+  base_spread_range: [20.0, 30.0]
+  volatility_multiplier_range: [0.8, 1.2]
+  fill_probability_noise: 0.05
+
+# =============================================================================
+# 訓練配置
+# =============================================================================
+train:
+  # 演算法選擇
+  algo: "SAC"
+  
+  # 訓練步數
+  total_timesteps: 200000           # Sanity Check 用
+  final_timesteps: 500000           # Final Training 用
+  
+  # SAC 超參數
+  learning_rate: 0.0003
+  batch_size: 256
+  buffer_size: 200000
+  gamma: 0.99
+  tau: 0.02
+  train_freq: 1
+  gradient_steps: 1
+  ent_coef: "auto"                  # 自動調整 entropy coefficient
+  
+  # 網路架構
+  net_arch: [256, 256]
+  
+  # 訓練設定
+  n_envs: 4                         # 平行環境數
+  eval_freq: 10000
+  n_eval_episodes: 5
+
+# =============================================================================
+# Sanity Check 配置
+# =============================================================================
+sanity_criteria:
+  # 絕對門檻
+  min_rl_net_pnl: 0.0               # 至少不虧錢
+  
+  # 相對門檻（使用差值）
+  min_rl_vs_random_gap: 200.0       # 比 Random 好 200
+  min_rl_vs_baseline_gap: -100.0    # 允許略低於 Baseline
+  
+  # 重試設定
+  max_retries: 3
+  
+  # 進階條件
+  require_positive_sharpe: false
+  skip_tuning_if_exceed_baseline: 1.5
+
+# =============================================================================
+# 資料切割
+# =============================================================================
+data_split:
+  train_start: "2023-01-01"
+  train_end: "2023-06-30"
+  valid_start: "2023-07-01"
+  valid_end: "2023-08-31"
+  test_start: "2023-09-01"
+  test_end: "2023-12-31"
+
+# =============================================================================
+# 評估指標配置
+# =============================================================================
+evaluation:
+  # 主要指標（用於比較）
+  primary_metrics:
+    - net_pnl
+    - sharpe
+    - max_drawdown
+    - calmar_ratio
+  
+  # 行為指標（用於診斷）
+  behavior_metrics:
+    - avg_spread
+    - fill_rate
+    - bid_fill_rate
+    - ask_fill_rate
+    - quote_rate
+    - inventory_turnover
+  
+  # 風險指標
+  risk_metrics:
+    - var_95
+    - expected_shortfall_95
+    - max_inventory_reached
+    - time_at_max_inventory_pct
+    - adverse_selection_rate
+
+# =============================================================================
+# 實驗追蹤
+# =============================================================================
+run:
+  short_name: "env_v3_shaped"
+  notes: "使用改良版環境 V2，Potential-based reward shaping，asymmetric action"
+  tags:
+    - "v2_env"
+    - "shaped_reward"
+    - "domain_rand"

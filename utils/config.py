@@ -2,13 +2,15 @@
 
 此模組的目標是讓訓練、評估、分析等腳本都可以透過單一入口取得
 env/train/data_split/run 等區塊，避免到處複製貼上參數。
+
+支援 V1 (HistoricalMarketMakingEnv) 和 V2 (MarketMakingEnvV2) 環境。
 """
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import yaml
 
@@ -34,6 +36,35 @@ class ExperimentConfig:
     @property
     def run(self) -> Dict[str, Any]:
         return dict(self.raw.get("run", {}))
+    
+    @property
+    def reward(self) -> Dict[str, Any]:
+        return dict(self.raw.get("reward", {}))
+    
+    @property
+    def observation(self) -> Dict[str, Any]:
+        return dict(self.raw.get("observation", {}))
+    
+    @property
+    def action(self) -> Dict[str, Any]:
+        return dict(self.raw.get("action", {}))
+    
+    @property
+    def domain_randomization(self) -> Dict[str, Any]:
+        return dict(self.raw.get("domain_randomization", {}))
+    
+    @property
+    def evaluation(self) -> Dict[str, Any]:
+        return dict(self.raw.get("evaluation", {}))
+    
+    @property
+    def sanity_criteria(self) -> Dict[str, Any]:
+        return dict(self.raw.get("sanity_criteria", {}))
+    
+    def is_v2_env(self) -> bool:
+        """檢查是否使用 V2 環境"""
+        env_id = self.env.get("id", "")
+        return "V2" in env_id or "v2" in env_id.lower()
 
 
 def _parse_file(path: Path) -> Dict[str, Any]:
@@ -165,4 +196,122 @@ def build_env_kwargs(
     if resolved_range is not None:
         kwargs["date_range"] = resolved_range
     return kwargs
+
+
+# =============================================================================
+# V2 Environment Support
+# =============================================================================
+
+def build_env_v2_kwargs(
+    config: ExperimentConfig,
+    root_dir: Path,
+    *,
+    seed: Optional[int] = None,
+    date_range: Optional[Tuple[str, str]] = None,
+    enable_domain_rand: Optional[bool] = None,
+) -> Dict[str, Any]:
+    """為 MarketMakingEnvV2 建構參數。"""
+    from envs.market_making_env_v2 import (
+        RewardConfig, RewardMode, ObservationConfig, 
+        ActionConfig, DomainRandomizationConfig
+    )
+    
+    env_cfg = config.env
+    reward_cfg = config.reward
+    obs_cfg = config.observation
+    action_cfg = config.action
+    dr_cfg = config.domain_randomization
+    
+    # 資料路徑
+    csv_path = env_cfg.get("data_file", "data/btc_usdt_1m_2023.csv")
+    if not Path(csv_path).is_absolute():
+        csv_path = str(root_dir / csv_path)
+    
+    # 建構 RewardConfig
+    reward_mode = RewardMode(reward_cfg.get("mode", "shaped"))
+    reward_config = RewardConfig(
+        mode=reward_mode,
+        lambda_inventory=reward_cfg.get("lambda_inventory", 0.0005),
+        lambda_turnover=reward_cfg.get("lambda_turnover", 0.0),
+        gamma=reward_cfg.get("gamma", 0.99),
+        sparse_scale=reward_cfg.get("sparse_scale", 0.01),
+        terminal_bonus_weight=reward_cfg.get("terminal_bonus_weight", 0.5),
+    )
+    
+    # 建構 ObservationConfig
+    observation_config = ObservationConfig(
+        include_price=obs_cfg.get("include_price", True),
+        include_inventory=obs_cfg.get("include_inventory", True),
+        include_time=obs_cfg.get("include_time", True),
+        include_volatility=obs_cfg.get("include_volatility", True),
+        include_momentum=obs_cfg.get("include_momentum", True),
+        include_volume=obs_cfg.get("include_volume", True),
+        include_inventory_age=obs_cfg.get("include_inventory_age", True),
+        volatility_windows=obs_cfg.get("volatility_windows", [5, 15, 60]),
+        momentum_windows=obs_cfg.get("momentum_windows", [5, 15]),
+    )
+    
+    # 建構 ActionConfig
+    action_config = ActionConfig(
+        mode=action_cfg.get("mode", "asymmetric"),
+        allow_no_quote=action_cfg.get("allow_no_quote", True),
+        max_spread_multiplier=action_cfg.get("max_spread_multiplier", 3.0),
+        min_spread_multiplier=action_cfg.get("min_spread_multiplier", 0.1),
+    )
+    
+    # 建構 DomainRandomizationConfig
+    dr_enabled = enable_domain_rand if enable_domain_rand is not None else dr_cfg.get("enabled", False)
+    domain_rand_config = DomainRandomizationConfig(
+        enabled=dr_enabled,
+        fee_rate_range=tuple(dr_cfg.get("fee_rate_range", [0.0003, 0.0005])),
+        base_spread_range=tuple(dr_cfg.get("base_spread_range", [15.0, 35.0])),
+        volatility_multiplier_range=tuple(dr_cfg.get("volatility_multiplier_range", [0.8, 1.2])),
+        fill_probability_noise=dr_cfg.get("fill_probability_noise", 0.1),
+    )
+    
+    kwargs = {
+        "csv_path": csv_path,
+        "episode_length": env_cfg.get("episode_length", 1000),
+        "fee_rate": env_cfg.get("fee_rate", 0.0004),
+        "base_spread": env_cfg.get("base_spread", 25.0),
+        "max_inventory": env_cfg.get("max_inventory", 5.0),
+        "initial_cash": env_cfg.get("initial_cash", 10000.0),
+        "random_start": env_cfg.get("random_start", True),
+        "reward_config": reward_config,
+        "obs_config": observation_config,
+        "action_config": action_config,
+        "domain_rand_config": domain_rand_config,
+    }
+    
+    if seed is not None:
+        kwargs["seed"] = seed
+    
+    if date_range is not None:
+        kwargs["date_range"] = date_range
+    
+    return kwargs
+
+
+def create_env_from_config(
+    config: ExperimentConfig,
+    root_dir: Path,
+    *,
+    seed: Optional[int] = None,
+    date_range: Optional[Tuple[str, str]] = None,
+    enable_domain_rand: Optional[bool] = None,
+):
+    """根據 Config 自動建立對應版本的環境。"""
+    if config.is_v2_env():
+        from envs.market_making_env_v2 import MarketMakingEnvV2
+        kwargs = build_env_v2_kwargs(
+            config, root_dir,
+            seed=seed,
+            date_range=date_range,
+            enable_domain_rand=enable_domain_rand,
+        )
+        return MarketMakingEnvV2(**kwargs)
+    else:
+        from envs.historical_market_making_env import HistoricalMarketMakingEnv
+        kwargs = build_env_kwargs(config.env, root_dir, seed=seed, date_range=date_range)
+        return HistoricalMarketMakingEnv(**kwargs)
 

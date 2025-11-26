@@ -18,18 +18,48 @@ coverage.xml
 *.cover
 *.log
 .pytest_cache/
+*.egg-info/
+dist/
+build/
 
 # VS Code
 .vscode/
 *.code-workspace
 
+# IDE
+.idea/
+*.swp
+*.swo
+
 # Mac
 .DS_Store
 
-# Project specific
+# Project specific - Runtime outputs
 logs/
 runs/
-data/
-models/*.zip
-!models/.gitkeep
 plots/
+*.csv
+!data/*.csv
+
+# Models (keep JSON configs, ignore trained models)
+models/*.zip
+models/*.pkl
+!models/*.json
+!models/.gitkeep
+
+# Data (keep sample, ignore large files)
+data/*.parquet
+!data/btc_usdt_1m_2023.csv
+
+# Reports
+*.html
+!docs/*.html
+
+# Temporary files
+*.tmp
+*.bak
+*.orig
+.ipynb_checkpoints/
+
+# Optuna
+*.db

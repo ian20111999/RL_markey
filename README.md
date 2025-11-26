@@ -1,208 +1,243 @@
-# 做市強化學習 (RL Market Making) 專案
+# RL Market Making
 
-本專案旨在透過強化學習 (Reinforcement Learning, RL) 訓練一個能夠在加密貨幣市場（如 BTC/USDT）中自動進行做市（Market Making）的智能代理人 (Agent)。
+使用強化學習（Reinforcement Learning）進行加密貨幣做市策略訓練的完整框架。
 
-專案採用 **Stable-Baselines3 (SAC)** 演算法，結合 **Optuna** 進行超參數優化，並針對 **Apple Silicon (M系列晶片)** 進行了深度效能優化（向量化環境、Numpy 加速、平行運算）。
+## 🎯 專案概述
+
+本專案實現了一個端到端的 RL 做市交易系統，包含：
+- **多演算法支援**：SAC、PPO、TD3
+- **進階環境設計**：V2 環境含 Potential-based Reward Shaping、Domain Randomization
+- **風險敏感訓練**：CVaR、Mean-Variance 優化
+- **課程學習**：漸進式難度訓練
+- **專業回測框架**：Walk-Forward Analysis、Monte Carlo Simulation
+- **自動化報告**：HTML/PDF 報告生成
 
 ---
 
-## 🏗️ 系統架構與流程
+## 📁 專案結構
 
-### 1. 系統架構圖
-
-```mermaid
-graph TD
-    subgraph Data["資料層 (Data Layer)"]
-        CSV["BTC/USDT 1m K線 (CSV)"]
-        Numpy["Numpy Array (記憶體加速)"]
-        CSV --> Numpy
-    end
-
-    subgraph Env["環境層 (Environment Layer)"]
-        MMEnv["HistoricalMarketMakingEnv"]
-        VecEnv["SubprocVecEnv (平行化環境)"]
-        Numpy --> MMEnv
-        MMEnv --> VecEnv
-    end
-
-    subgraph Agent["代理人層 (Agent Layer)"]
-        SAC["SAC Algorithm (Stable-Baselines3)"]
-        Policy["MlpPolicy (Actor-Critic)"]
-        VecEnv <--> SAC
-        SAC --> Policy
-    end
-
-    subgraph Optimization["優化層 (Optimization Layer)"]
-        Optuna["Optuna Study"]
-        Pruner["Pruning Callback (自動剪枝)"]
-        Eval["Parallel Evaluation (平行評估)"]
-        Optuna --> SAC
-        SAC --> Pruner
-        Pruner --> Eval
-    end
-
-    subgraph Output["輸出層 (Output Layer)"]
-        Logs["Logs (*.log)"]
-        Models["Models (*.zip, *.json)"]
-        Metrics["Metrics (Sharpe, Drawdown)"]
-        SAC --> Logs
-        SAC --> Models
-        Eval --> Metrics
-    end
 ```
-
-### 2. 實驗工作流程圖
-
-```mermaid
-graph LR
-    A[資料準備 fetch_binance_ohlcv] --> B[定義 Configs (yaml)]
-    B --> C{超參數搜尋 tune_mm_sac}
-    C -->|平行運算| D[Optuna Tuning (多組 Configs)]
-    D -->|產出| E[最佳參數 best_params.json]
-    E --> F[模型訓練 train_mm_sac]
-    F -->|產出| G[訓練好的模型 model.zip]
-    G --> H[策略評估 evaluate_policy]
-    H --> I[結果分析 analyze_experiments]
+RL_markey/
+├── configs/                    # 配置檔
+│   ├── env_v3_full.yaml       # V3 完整配置（推薦）
+│   ├── env_v2.yaml            # V2 基礎配置
+│   └── env_baseline.yaml      # 基準配置
+│
+├── data/                       # 數據
+│   └── btc_usdt_1m_2023.csv   # BTC/USDT 1分鐘K線
+│
+├── envs/                       # Gymnasium 環境
+│   ├── market_making_env_v2.py     # V2 環境（主要）
+│   ├── historical_market_making_env.py  # V1 環境
+│   └── realistic_fill_model.py     # 真實成交模型
+│
+├── scripts/                    # 執行腳本
+│   ├── run_v3_pipeline.py     # V3 完整流程（推薦）
+│   ├── train_v2.py            # V2 訓練腳本
+│   ├── fetch_binance_ohlcv.py # 數據下載
+│   └── legacy/                # 舊版腳本（參考用）
+│
+├── utils/                      # 工具模組
+│   ├── algorithms.py          # 多演算法工廠
+│   ├── risk_sensitive.py      # 風險敏感訓練
+│   ├── curriculum.py          # 課程學習
+│   ├── backtesting.py         # 回測框架
+│   ├── ensemble.py            # 集成方法
+│   ├── explainability.py      # 可解釋性分析
+│   ├── online_adaptation.py   # 線上適應
+│   ├── distributed_training.py # 分散式訓練
+│   └── report_generator.py    # 報告生成
+│
+├── models/                     # 模型與參數
+├── runs/                       # 訓練記錄
+└── docs/                       # 文件
 ```
 
 ---
 
-## 🚀 快速開始 (Quick Start)
+## 🚀 快速開始
 
-### 1. 環境安裝
-
-請確保您已安裝 Python 3.10+。
+### 1. 安裝依賴
 
 ```bash
-# 1. 建立虛擬環境
 python -m venv .venv
 source .venv/bin/activate
-
-# 2. 安裝依賴套件
 pip install -r requirements.txt
 ```
 
-### 2. 資料準備
-
-下載 Binance 的 BTC/USDT 1分鐘 K線資料：
+### 2. 下載數據
 
 ```bash
-python scripts/fetch_binance_ohlcv.py --symbol BTC/USDT --timeframe 1m --since "2023-01-01 00:00:00"
+python scripts/fetch_binance_ohlcv.py --symbol BTC/USDT --timeframe 1m --days 365
+```
+
+### 3. 執行訓練
+
+**標準訓練（推薦新手）：**
+```bash
+python scripts/run_v3_pipeline.py --config configs/env_v3_full.yaml --mode standard
+```
+
+**使用不同演算法：**
+```bash
+python scripts/run_v3_pipeline.py --algorithm PPO --total_timesteps 200000
+python scripts/run_v3_pipeline.py --algorithm TD3 --total_timesteps 200000
+```
+
+**課程學習訓練：**
+```bash
+python scripts/run_v3_pipeline.py --mode curriculum
+```
+
+**完整流程（訓練 + 回測 + 報告）：**
+```bash
+python scripts/run_v3_pipeline.py --mode full --generate_report
 ```
 
 ---
 
-## 🧪 實驗步驟詳解
+## 🔧 主要功能
 
-### 步驟一：定義實驗配置 (Configs)
+### 演算法支援
 
-在 `configs/` 目錄下建立或修改 YAML 設定檔。目前已預設四種場景：
+| 演算法 | 適用場景 | 特點 |
+|--------|----------|------|
+| **SAC** | 連續動作空間（預設） | 樣本效率高、自動探索調整 |
+| **PPO** | 通用場景 | 穩定、易調參 |
+| **TD3** | 連續動作空間 | 減少過估計、穩定性佳 |
 
-*   `configs/env_baseline.yaml`: 基準策略
-*   `configs/env_aggressive_spread.yaml`: 積極縮小價差
-*   `configs/env_conservative_inventory.yaml`: 保守庫存控制
-*   `configs/env_turnover_penalty.yaml`: 懲罰過度交易
+### 環境特性（V2）
 
-### 步驟二：批次超參數搜尋 (Tuning) 🔥 **核心步驟**
+- **4 種獎勵模式**：`dense`, `sparse`, `shaped`, `hybrid`
+- **Domain Randomization**：費率、spread、波動率隨機化
+- **擴展觀察空間**：17+ 特徵（波動率、動量、成交量等）
+- **靈活動作空間**：對稱/非對稱 spread + 數量控制
 
-使用我們優化過的平行運算指令，同時對多個 Config 進行 Optuna 調參。這會充分利用您的 CPU 多核效能。
-
-1.  **建立目標清單**：
-    ```bash
-    cat <<'EOF' > configs/tuning_targets.txt
-    configs/env_baseline.yaml
-    configs/env_turnover_penalty.yaml
-    configs/env_aggressive_spread.yaml
-    configs/env_conservative_inventory.yaml
-    EOF
-    ```
-
-2.  **執行平行 Tuning** (同時跑 2 個實驗，每個實驗內部開 4 個平行環境)：
-    ```bash
-    # 確保 logs 目錄存在
-    mkdir -p logs
-
-    # 啟動平行運算
-    i=0; while read cfg; do ((i++)); ( source .venv/bin/activate && cfg_name=$(basename "$cfg" .yaml) && python tune_mm_sac.py --config "$cfg" --n_trials 25 --train_timesteps 80000 --eval_episode_length 600 --eval_episodes 5 --save_best_params --device mps --best_params_path models/${cfg_name}_best_params.json > logs/${cfg_name}_tune.log 2>&1 & echo $! > logs/${cfg_name}_pid.txt ); if (( i % 2 == 0 )); then wait; fi; done < configs/tuning_targets.txt; wait
-    ```
-
-3.  **監控進度** (推薦)：
-    另開一個 Terminal，即時查看 Log：
-    ```bash
-    tail -f logs/*.log
-    ```
-    *當看到 `✅ Tuning Complete` 字樣時，代表該實驗已完成。*
-
-### 步驟三：模型訓練 (Training)
-
-取得最佳參數後 (`models/*_best_params.json`)，開始進行長時間的正式訓練。
+### 進階功能
 
 ```bash
-# 範例：訓練 Baseline 策略
-python train_mm_sac.py \
-    --config configs/env_baseline.yaml \
-    --total_timesteps 1000000 \
-    --device mps
-```
-訓練結果會儲存在 `runs/SAC/<timestamp>_<short_name>/`。
+# 風險敏感訓練
+python scripts/run_v3_pipeline.py --use_risk_wrapper
 
-### 步驟四：策略評估 (Evaluation)
+# 分散式訓練（超參數搜尋 + 多種子驗證）
+python scripts/run_v3_pipeline.py --mode distributed --n_hp_trials 30
 
-對訓練好的模型進行嚴格的回測（包含訓練集、驗證集、測試集）。
+# 回測分析
+python scripts/run_v3_pipeline.py --run_backtest
 
-```bash
-python scripts/evaluate_policy.py \
-    --config configs/env_baseline.yaml \
-    --model_path runs/SAC/您的實驗資料夾/model.zip \
-    --episodes 10 \
-    --device mps
-```
-
-### 步驟五：結果分析 (Analysis)
-
-彙整所有實驗結果，比較 Sharpe Ratio、最大回撤等指標。
-
-```bash
-python scripts/analyze_experiments.py --runs_dir runs --sort_by test_sharpe
+# 可解釋性分析
+python scripts/run_v3_pipeline.py --run_explainability
 ```
 
 ---
 
-## ⚙️ 關鍵參數說明
+## 📊 配置說明
 
-| 參數 | 說明 | 影響 |
-| :--- | :--- | :--- |
-| `fee_rate` | 交易手續費率 (預設 0.0004) | 越高則 Agent 越傾向拉大 Spread 或減少交易 |
-| `lambda_inv` | 庫存懲罰係數 | 越高則 Agent 越傾向保持零庫存 (Inventory Neutral) |
-| `lambda_turnover` | 交易量懲罰係數 | 用於抑制無意義的刷單行為 (Wash Trading) |
-| `base_spread` | 基準價差 | 影響掛單的初始寬度 |
-| `alpha` | Spread 動態調整係數 | 決定 Agent 能多大程度地改變 Spread |
+`configs/env_v3_full.yaml` 包含所有可調參數：
+
+```yaml
+env:
+  initial_cash: 100000
+  fee_rate: 0.0004
+  max_inventory: 10.0
+  
+  reward_config:
+    mode: "hybrid"              # dense, sparse, shaped, hybrid
+    inventory_penalty: 0.0005
+    
+  domain_randomization:
+    enabled: true
+    fee_rate_range: [0.0003, 0.0005]
+
+curriculum:
+  enabled: false
+  stages:
+    - name: "easy"
+      env_params: {fee_rate: 0.0002}
+      advancement_threshold: 50.0
+
+risk_sensitive:
+  enabled: false
+  risk_lambda: 0.1              # 風險厭惡係數
+  risk_type: "variance"         # variance, cvar, downside_variance
+```
 
 ---
 
-## 🛠️ 效能優化技術細節
+## 📈 評估指標
 
-本專案針對高頻模擬進行了以下優化：
-
-1.  **Numpy Data Access**: 將環境內的 DataFrame 轉為 Numpy Array，大幅減少 Pandas 索引開銷。
-2.  **SubprocVecEnv**: 訓練與評估階段皆採用多進程 (Multi-processing) 平行環境，吞吐量提升 4x 以上。
-3.  **Persistent Evaluation**: 評估環境在 Trial 內持久化，消除重複 I/O 與初始化時間。
-4.  **Optuna Pruning**: 結合 `TrialPruned` 機制，自動提早終止表現不佳的訓練嘗試。
+| 指標 | 說明 |
+|------|------|
+| **Sharpe Ratio** | 風險調整報酬 |
+| **Max Drawdown** | 最大回撤 |
+| **Win Rate** | 勝率 |
+| **Profit Factor** | 獲利因子 |
+| **Avg Trade PnL** | 平均交易損益 |
+| **Sortino Ratio** | 下行風險調整報酬 |
 
 ---
 
-## 📂 目錄結構
+## 🛠️ 進階使用
 
+### 使用演算法工廠
+
+```python
+from utils.algorithms import AlgorithmFactory
+
+model = AlgorithmFactory.create(
+    algorithm="SAC",
+    env=env,
+    learning_rate=3e-4,
+    buffer_size=100000
+)
 ```
-.
-├── configs/                 # 實驗設定檔 (YAML)
-├── data/                    # 歷史資料 (CSV)
-├── envs/                    # RL 環境定義
-├── logs/                    # 執行日誌 (Tuning Logs)
-├── models/                  # 最佳參數與模型
-├── runs/                    # 訓練產出 (Tensorboard, Checkpoints)
-├── scripts/                 # 工具腳本 (下載、評估、分析)
-├── train_mm_sac.py          # 訓練主程式
-├── tune_mm_sac.py           # 調參主程式 (Optuna)
-└── requirements.txt         # 專案依賴
+
+### 課程學習
+
+```python
+from utils.curriculum import train_with_curriculum
+
+model = train_with_curriculum(
+    env_fn=make_env,
+    stages=[
+        {"name": "easy", "env_params": {"fee_rate": 0.0002}},
+        {"name": "hard", "env_params": {"fee_rate": 0.0004}}
+    ],
+    total_timesteps=200000
+)
 ```
+
+### 回測框架
+
+```python
+from utils.backtesting import BacktestEngine
+
+engine = BacktestEngine(env_fn=make_env, policy=model)
+results = engine.run_walk_forward_analysis(
+    train_window=30, test_window=7
+)
+mc_results = engine.run_monte_carlo_simulation(n_simulations=1000)
+```
+
+### 報告生成
+
+```python
+from utils.report_generator import QuickReportBuilder
+
+report = (
+    QuickReportBuilder("My Report")
+    .with_metric("Sharpe", 1.85)
+    .with_equity_curve("path/to/equity.csv")
+    .build("report.html")
+)
+```
+
+---
+
+## 📝 License
+
+MIT License
+
+## 🤝 Contributing
+
+歡迎提交 Issue 和 Pull Request！

@@ -1,113 +1,226 @@
-# 全流程實驗工作流與效能指南
+# 實驗工作流程指南
 
-本文件將「tuning → training → evaluate → analyze」整套流程串成可平行執行的批次作業，並提供 Mac Apple Silicon 上的資源利用建議。照此操作可在 1–2 個工作階段內產生多組可比較的策略結果。
+本文件說明如何使用 V3 Pipeline 進行完整的強化學習做市策略實驗。
 
-## 0. 實驗矩陣
+---
 
-| Config | 重點 | 建議用途 |
-| --- | --- | --- |
-| `configs/env_baseline.yaml` | 原始環境，lambda_turnover=0 | 當作對照組，驗證新流程是否穩定 |
-| `configs/env_turnover_penalty.yaml` | 追加 turnover 懲罰，beta 略高 | 抑制刷單並觀察成交稀疏情況 |
-| `configs/env_aggressive_spread.yaml` | 縮小 spread、提高 beta | 壓榨流動性、測試高頻動態 |
-| `configs/env_conservative_inventory.yaml` | 嚴控庫存、base_spread 较寬 | 保守策略、檢查穩定性 |
+## 1. 實驗配置
 
-> 需要更多變體時，可複製其中一份 YAML，調整 `env` / `train` / `run.short_name` 後再加入下列流程即可。
+### 配置檔說明
 
-## 1. 批次調參（Optuna）
+| 配置檔 | 用途 | 特點 |
+|--------|------|------|
+| `env_v3_full.yaml` | **推薦** - 完整配置 | 包含所有進階功能選項 |
+| `env_v2.yaml` | 基礎 V2 配置 | 適合快速測試 |
+| `env_baseline.yaml` | 對照組 | 最簡單的設定 |
 
-1. 建立一份 config 清單：
-   ```bash
-   cat <<'EOF' > configs/tuning_targets.txt
-   configs/env_baseline.yaml
-   configs/env_turnover_penalty.yaml
-   configs/env_aggressive_spread.yaml
-   configs/env_conservative_inventory.yaml
-   EOF
-   ```
+### 主要參數
 
-2. 以 2~3 個平行行程跑 Optuna，優先壓榨 CPU：
-   ```bash
-   # 每組 25 trials、每 trial 80k steps，依機器調整
-   xargs -I{} -P 2 bash -c '
-     source .venv/bin/activate && \
-     python tune_mm_sac.py \
-       --config {} \
-       --n_trials 25 \
-       --train_timesteps 80000 \
-       --eval_episode_length 600 \
-       --eval_episodes 5 \
-       --save_best_params \
-       --device mps > logs/$(basename {} .yaml)_tune.log 2>&1
-   ' < configs/tuning_targets.txt
-   ```
+```yaml
+env:
+  fee_rate: 0.0004          # 手續費率
+  max_inventory: 10.0       # 最大庫存
+  reward_config:
+    mode: "hybrid"          # 獎勵模式
+    inventory_penalty: 0.0005
 
-   - `-P 2` 表示同時兩組 tuning；視 CPU/GPU 負載可調成 3。
-   - log 會存進 `logs/`，方便日後對照。
-
-3. Tuning 完成後，`models/best_sac_params.json` 會被覆寫成最新結果；若要各 config 各存一份，可在指令裡改 `--best_params_path runs/<algo>/<config_name>/best_params.json`。
-
-## 2. 大規模訓練
-
-- 依 config 矩陣開啟 2~3 個訓練行程，讓 GPU (MPS) 一樣吃滿：
-
-```bash
-cat configs/tuning_targets.txt | xargs -I{} -P 2 bash -c '
-  source .venv/bin/activate && \
-  python train_mm_sac.py --config {} --device mps > logs/$(basename {} .yaml)_train.log 2>&1
-'
+train:
+  total_timesteps: 500000
+  learning_rate: 0.0003
 ```
 
-- `train_mm_sac.py` 會自動生成 `runs/SAC/<timestamp>_<short_name>/`。稍後的評估/分析都直接讀 run 目錄，互不覆蓋。
+---
 
-- 若需要更快收斂，可把 config 裡的 `train.total_timesteps` 調高為 500k~1M，並確保 `train.log_interval` 不要太小，避免 IO 成瓶頸。
+## 2. 訓練流程
 
-## 3. 分段評估 (Train/Valid/Test)
-
-訓練完成後，立即對所有 model.zip 做分段測試：
+### 方式一：標準訓練（推薦新手）
 
 ```bash
-find runs/SAC -name model.zip | sort | xargs -I{} -P 3 bash -c '
-  source .venv/bin/activate && \
-  python scripts/evaluate_policy.py \
-    --config configs/env_baseline.yaml \
-    --model_path {} \
-    --episodes 5 \
-    --device mps > logs/$(basename $(dirname {}))_eval.log 2>&1
-'
+python scripts/run_v3_pipeline.py \
+    --config configs/env_v3_full.yaml \
+    --mode standard \
+    --algorithm SAC \
+    --total_timesteps 200000
 ```
 
-- `--config` 可換成與 model 相同的 YAML，以確保資料切割一致。
-- 輸出會寫在 `runs/.../evaluation/` 下，包含 `metrics.json`（train/valid/test 指標）、每段 CSV、test 曲線圖。
+### 方式二：課程學習
 
-## 4. 整體分析
+漸進式難度訓練，從簡單到困難：
 
-1. 整理所有 run 的 metrics（建議在每輪評估後執行）：
-   ```bash
-   source .venv/bin/activate
-   python scripts/analyze_experiments.py --runs_dir runs --sort_by test_sharpe --top_k 10 --plot_param lambda_inv --plot_metric test_sharpe
-   ```
+```bash
+python scripts/run_v3_pipeline.py \
+    --mode curriculum \
+    --total_timesteps 300000
+```
 
-2. 產出的 `runs/runs_summary.csv` 建議開在 spreadsheet/Notion，進一步做 pivot 或篩選。
+### 方式三：分散式訓練
 
-3. `plots/analysis_<param>_vs_<metric>.png` 可快速判斷參數與績效的關係，例如調整 `lambda_turnover` 是否能換來更好 Sharpe。
+包含超參數搜尋和多種子驗證：
 
-## 5. 資源配置 Tips
+```bash
+python scripts/run_v3_pipeline.py \
+    --mode distributed \
+    --n_hp_trials 30 \
+    --validation_seeds 42,43,44,45,46
+```
 
-- **CPU vs GPU**：tuning 偏 CPU 密集（Optuna + env step），training/ evaluation 則會吃到 GPU/MPS。可同時跑 2 個 training + 1 個 tuning，以充分利用兩者。
-- **Log 管理**：所有指令都導向 `logs/*.log`，可用 `tail -f` 即時查看。建議配合 `grep -i warning` 監控錯誤。
-- **熱管理**：若 Activity Monitor 顯示 SoC 溫度過高，可把 `xargs -P` 調小或在晚上排程；M 系列長時間 80% 以上負載仍可穩定運作。
-- **中斷續跑**：Optuna 若使用 `--storage sqlite:///optuna.db`，即使中途中斷也能接續；run 輸出不會被覆蓋。
+### 方式四：完整流程
 
-## 6. 預期產物（每組 config）
+訓練 + 回測 + 可解釋性分析 + 報告生成：
 
-1. `runs/SAC/<timestamp>_<short_name>/`：完整訓練、評估資料。
-2. `logs/<config>_{tune,train,eval}.log`：排錯用。
-3. `runs/runs_summary.csv` + `plots/analysis_*.png`：跨實驗比較視覺化。
+```bash
+python scripts/run_v3_pipeline.py \
+    --mode full \
+    --generate_report
+```
 
-依照上述腳本，可形成以下時間線：
+---
 
-1. 上午：啟動批次 tuning（~2hr）。
-2. 中午：挑選最佳參數後立即開跑訓練 2~3 組（~3hr）。
-3. 下午：訓練完成即刻進行 evaluate + analyze（<1hr），當天就能得到 test 段穩定度排名。
+## 3. 演算法選擇
 
-有了這套流程，可以在單日內跑出一個 mini grid search + 回測報告，並確保所有輸出都有 config/metrics 追蹤，方便之後微調特定環境參數或 reward 組件。
+| 演算法 | 指令 | 適用場景 |
+|--------|------|----------|
+| SAC | `--algorithm SAC` | 預設，連續動作空間 |
+| PPO | `--algorithm PPO` | 穩定性優先 |
+| TD3 | `--algorithm TD3` | 減少過估計 |
+
+```bash
+# 使用 PPO
+python scripts/run_v3_pipeline.py --algorithm PPO
+
+# 使用 TD3
+python scripts/run_v3_pipeline.py --algorithm TD3
+```
+
+---
+
+## 4. 進階功能
+
+### 風險敏感訓練
+
+```bash
+python scripts/run_v3_pipeline.py --use_risk_wrapper
+```
+
+在配置檔中設定：
+```yaml
+risk_sensitive:
+  enabled: true
+  risk_lambda: 0.1        # 風險厭惡係數
+  risk_type: "variance"   # variance, cvar, downside_variance
+```
+
+### 回測分析
+
+```bash
+python scripts/run_v3_pipeline.py --run_backtest
+```
+
+包含：
+- Walk-Forward Analysis
+- Monte Carlo Simulation
+- 交易成本敏感度分析
+
+### 可解釋性分析
+
+```bash
+python scripts/run_v3_pipeline.py --run_explainability
+```
+
+產出：
+- 特徵重要性排名
+- 動作分佈分析
+- 狀態-動作熱力圖
+
+---
+
+## 5. 批次實驗
+
+### 多配置比較
+
+```bash
+for config in configs/env_v2.yaml configs/env_v3_full.yaml; do
+    python scripts/run_v3_pipeline.py \
+        --config $config \
+        --mode standard \
+        --total_timesteps 100000
+done
+```
+
+### 多演算法比較
+
+```bash
+for algo in SAC PPO TD3; do
+    python scripts/run_v3_pipeline.py \
+        --algorithm $algo \
+        --total_timesteps 100000 \
+        --output_dir runs/algo_comparison_${algo}
+done
+```
+
+---
+
+## 6. 輸出結構
+
+每次運行產生：
+
+```
+runs/v3_standard_SAC_20241126_120000/
+├── config.yaml              # 使用的配置
+├── training_results.json    # 訓練指標
+├── best_model/              # 最佳模型
+├── checkpoints/             # 檢查點
+├── eval_logs/               # 評估日誌
+├── backtest_results.json    # 回測結果（如啟用）
+├── explainability_results.json  # 可解釋性（如啟用）
+└── report.html              # HTML 報告（如啟用）
+```
+
+---
+
+## 7. 監控與除錯
+
+### 即時監控
+
+```bash
+# 查看訓練日誌
+tail -f runs/*/train_log.csv
+
+# 使用 TensorBoard
+tensorboard --logdir runs/
+```
+
+### 常見問題
+
+1. **記憶體不足**：減少 `buffer_size` 或 `n_envs`
+2. **訓練不穩定**：降低 `learning_rate`，增加 `batch_size`
+3. **獎勵稀疏**：改用 `reward_mode: "dense"` 或 `"shaped"`
+
+---
+
+## 8. 資源建議
+
+| 設備 | 建議配置 |
+|------|----------|
+| CPU | 8+ 核心，用於環境並行 |
+| RAM | 16GB+，視 `buffer_size` 而定 |
+| GPU | 可選，MPS/CUDA 加速訓練 |
+
+### Apple Silicon 優化
+
+```bash
+# 使用 MPS 加速
+python scripts/run_v3_pipeline.py --device mps
+```
+
+---
+
+## 9. 預期時間
+
+| 模式 | 100k steps | 500k steps |
+|------|------------|------------|
+| standard | ~10 分鐘 | ~50 分鐘 |
+| curriculum | ~15 分鐘 | ~75 分鐘 |
+| distributed | ~2 小時 | ~6 小時 |
+
+*以 M1 MacBook Pro 為基準*
