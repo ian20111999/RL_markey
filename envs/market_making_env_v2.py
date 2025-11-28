@@ -261,7 +261,8 @@ class MarketMakingEnvV2(gym.Env):
     
     def __init__(
         self,
-        csv_path: str,
+        csv_path: Optional[str] = None,
+        df: Optional[pd.DataFrame] = None,
         episode_length: int = 1000,
         fee_rate: float = 0.0004,
         base_spread: float = 25.0,
@@ -278,8 +279,13 @@ class MarketMakingEnvV2(gym.Env):
     ):
         super().__init__()
         
+        # 驗證輸入
+        if csv_path is None and df is None:
+            raise ValueError("Must provide either csv_path or df")
+        
         # 基本參數
         self.csv_path = csv_path
+        self._input_df = df  # 直接傳入的 DataFrame
         self.episode_length = episode_length
         self.base_fee_rate = fee_rate
         self.base_spread = base_spread
@@ -317,7 +323,11 @@ class MarketMakingEnvV2(gym.Env):
     
     def _load_data(self):
         """載入並預處理資料"""
-        self.df = pd.read_csv(self.csv_path)
+        # 支援直接傳入 DataFrame 或從 CSV 載入
+        if self._input_df is not None:
+            self.df = self._input_df.copy()
+        else:
+            self.df = pd.read_csv(self.csv_path)
         
         if self.date_range is not None:
             self.df = self._slice_by_date_range(self.df, self.date_range)

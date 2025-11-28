@@ -39,9 +39,10 @@ sys.path.insert(0, str(project_root))
 
 # 核心導入
 from envs.market_making_env_v2 import MarketMakingEnvV2
-from utils.algorithms import AlgorithmFactory, get_default_hyperparameters
-from utils.risk_sensitive import RiskAwareRewardWrapper, RiskMetricsCallback
-from utils.curriculum import CurriculumScheduler, train_with_curriculum
+from utils.config import load_config as load_yaml_config, load_data, create_env as create_base_env
+from utils.algorithms import create_model, get_algo_class, get_default_config, AlgorithmComparator
+from utils.risk_sensitive import RiskAwareRewardWrapper, RiskMetricsCalculator
+from utils.curriculum import CurriculumScheduler, CurriculumCallback, CurriculumEnvWrapper, create_curriculum_env
 from utils.backtesting import BacktestEngine
 from utils.report_generator import ReportGenerator, QuickReportBuilder, ReportConfig
 
@@ -86,16 +87,17 @@ except ImportError:
 
 
 def load_config(config_path: str) -> dict:
-    """載入 YAML 配置檔"""
-    with open(config_path, 'r') as f:
-        return yaml.safe_load(f)
+    """載入 YAML 配置檔（包裝 utils.config）"""
+    cfg = load_yaml_config(config_path)
+    return cfg.raw  # 返回原始 dict 以便向後兼容
 
 
 def create_env(
     data: pd.DataFrame,
     config: dict,
     use_realistic_fill: bool = False,
-    use_risk_wrapper: bool = False
+    use_risk_wrapper: bool = False,
+    seed: int = None
 ):
     """
     建立環境
@@ -159,7 +161,7 @@ def run_standard_training(
     
     # 取得超參數
     train_config = config.get('train', {})
-    hyperparams = get_default_hyperparameters(algorithm)
+    hyperparams = get_default_config(algorithm)
     hyperparams.update({
         'learning_rate': train_config.get('learning_rate', 3e-4),
         'batch_size': train_config.get('batch_size', 256),
@@ -167,10 +169,11 @@ def run_standard_training(
     })
     
     # 建立模型
-    model = AlgorithmFactory.create(
-        algorithm=algorithm,
+    model = create_model(
+        algo=algorithm.lower(),
         env=vec_env,
-        **hyperparams
+        config_overrides=hyperparams,
+        verbose=1
     )
     
     # 設定回調
@@ -265,13 +268,28 @@ def run_curriculum_training(
         return create_env(train_data, env_config)
     
     # 使用課程學習訓練
-    model = train_with_curriculum(
-        env_fn=make_env_fn,
-        stages=stages,
-        algorithm=algorithm,
-        total_timesteps=total_timesteps,
-        save_path=str(output_dir),
+    # 建立基礎環境
+    base_env = make_env_fn()
+    vec_env = DummyVecEnv([lambda: base_env])
+    
+    # 建立模型
+    model = create_model(
+        algo=algorithm.lower(),
+        env=vec_env,
         verbose=1
+    )
+    
+    # 建立課程回調
+    curriculum_callback = CurriculumCallback(
+        curriculum_config=curriculum_config,
+        verbose=1
+    )
+    
+    # 訓練
+    model.learn(
+        total_timesteps=total_timesteps,
+        callback=curriculum_callback,
+        progress_bar=True
     )
     
     # 評估

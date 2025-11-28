@@ -34,8 +34,8 @@ sys.path.append(str(ROOT))
 
 from envs.market_making_env_v2 import MarketMakingEnvV2, RewardConfig, RewardMode
 from utils.config import (
-    ExperimentConfig, build_env_v2_kwargs, create_env_from_config,
-    export_config, load_config
+    ExperimentConfig, load_config, export_config, load_data, split_data,
+    create_env, create_env_from_config
 )
 from utils.algorithms import create_model, get_algo_class, ALGO_CONFIGS
 from utils.curriculum import CurriculumScheduler, CurriculumEnvWrapper, create_market_making_curriculum
@@ -154,7 +154,8 @@ def run_evaluation(
     test_range = (test_split.get("test_start"), test_split.get("test_end"))
     
     action_dim = 3  # asymmetric mode
-    if config.action.get("mode") == "symmetric":
+    action_config = config.env.get("action_config", {})
+    if action_config.get("mode") == "symmetric":
         action_dim = 2
     
     agents = {
@@ -429,7 +430,7 @@ def sanity_check(
     """執行 Sanity Check：確認 RL 能學到比 Random 好的策略。"""
     
     config = load_config(config_path)
-    criteria = config.sanity_criteria
+    criteria = config.raw.get("sanity_criteria", {})
     
     for attempt in range(1, max_retries + 1):
         seed = base_seed + attempt

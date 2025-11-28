@@ -28,8 +28,8 @@ RL_markey/
 │
 ├── envs/                       # Gymnasium 環境
 │   ├── market_making_env_v2.py     # V2 環境（主要）
-│   ├── historical_market_making_env.py  # V1 環境
-│   └── realistic_fill_model.py     # 真實成交模型
+│   ├── realistic_fill_model.py     # 真實成交模型
+│   └── legacy/                     # 舊版環境（參考用）
 │
 ├── scripts/                    # 執行腳本
 │   ├── run_v3_pipeline.py     # V3 完整流程（推薦）
@@ -182,29 +182,31 @@ risk_sensitive:
 ### 使用演算法工廠
 
 ```python
-from utils.algorithms import AlgorithmFactory
+from utils.algorithms import create_model
 
-model = AlgorithmFactory.create(
-    algorithm="SAC",
+model = create_model(
+    algo="sac",
     env=env,
-    learning_rate=3e-4,
-    buffer_size=100000
+    config_overrides={
+        "learning_rate": 3e-4,
+        "buffer_size": 100000
+    }
 )
 ```
 
 ### 課程學習
 
 ```python
-from utils.curriculum import train_with_curriculum
+from utils.curriculum import CurriculumScheduler, CurriculumEnvWrapper
 
-model = train_with_curriculum(
-    env_fn=make_env,
-    stages=[
-        {"name": "easy", "env_params": {"fee_rate": 0.0002}},
-        {"name": "hard", "env_params": {"fee_rate": 0.0004}}
-    ],
-    total_timesteps=200000
-)
+# 建立課程排程器
+scheduler = CurriculumScheduler(stages=[
+    {"name": "easy", "env_params": {"fee_rate": 0.0002}},
+    {"name": "hard", "env_params": {"fee_rate": 0.0004}}
+])
+
+# 包裝環境
+env = CurriculumEnvWrapper(base_env, scheduler)
 ```
 
 ### 回測框架

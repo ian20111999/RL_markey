@@ -29,7 +29,7 @@ import sys
 sys.path.append(str(Path(__file__).parent.parent))
 
 from envs.market_making_env_v2 import MarketMakingEnvV2
-from utils.config import load_config
+from utils.config import load_config, load_data, create_env
 
 
 def evaluate_episode(env, model, deterministic: bool = True) -> Dict:
@@ -209,42 +209,20 @@ def main():
     
     # 載入配置
     cfg = load_config(args.config)
+    ROOT = Path(__file__).resolve().parent.parent
     
     # 載入數據
-    df = pd.read_csv(cfg['data']['path'], parse_dates=['timestamp'])
-    test_start = int(len(df) * cfg['data_split']['train_end'])
-    test_df = df.iloc[test_start:].reset_index(drop=True)
+    df = load_data(cfg, ROOT)
+    split_cfg = cfg.data_split
+    train_end = split_cfg.get("train_end", 0.7)
+    if isinstance(train_end, float):
+        train_end = int(len(df) * train_end)
+    test_df = df.iloc[train_end:].reset_index(drop=True)
     
     print(f"📊 Test Data: {len(test_df)} rows")
     
-    # 建立 V2 環境
-    env_cfg = cfg.get('env', {})
-    reward_cfg = env_cfg.get('reward_config', {})
-    obs_cfg = env_cfg.get('obs_config', {})
-    action_cfg = env_cfg.get('action_config', {})
-    
-    env = MarketMakingEnvV2(
-        df=test_df,
-        initial_cash=cfg['env'].get('initial_cash', 100_000),
-        fee_rate=cfg['env'].get('fee_rate', 0.0004),
-        max_inventory=cfg['env'].get('max_inventory', 10.0),
-        lookback=cfg['env'].get('lookback', 60),
-        # Reward
-        reward_mode=reward_cfg.get('mode', 'dense'),
-        inventory_penalty=reward_cfg.get('inventory_penalty', 0.01),
-        shaping_lambda=reward_cfg.get('shaping_lambda', 0.1),
-        # Observation
-        include_volatility=obs_cfg.get('include_volatility', True),
-        include_momentum=obs_cfg.get('include_momentum', True),
-        include_time_features=obs_cfg.get('include_time_features', True),
-        volatility_windows=obs_cfg.get('volatility_windows', [5, 60]),
-        # Action
-        spread_range=tuple(action_cfg.get('spread_range', [0.0001, 0.01])),
-        allow_asymmetric_spread=action_cfg.get('allow_asymmetric_spread', True),
-        quantity_range=tuple(action_cfg.get('quantity_range', [0.0, 1.0])),
-        # Disable Domain Randomization for evaluation
-        enable_domain_randomization=False,
-    )
+    # 建立 V2 環境（使用 create_env）
+    env = create_env(test_df, cfg, seed=42, enable_domain_rand=False)
     
     # 載入模型
     model = SAC.load(args.model_path)

@@ -1,9 +1,6 @@
-"""config.py: 負責載入 YAML/JSON 設定，提供統一的字典介面。
-
-此模組的目標是讓訓練、評估、分析等腳本都可以透過單一入口取得
-env/train/data_split/run 等區塊，避免到處複製貼上參數。
-
-支援 V1 (HistoricalMarketMakingEnv) 和 V2 (MarketMakingEnvV2) 環境。
+"""
+config.py: Load YAML/JSON config and provide unified interface.
+Uses MarketMakingEnvV2 environment.
 """
 from __future__ import annotations
 
@@ -13,13 +10,16 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 import yaml
+import pandas as pd
 
 
 @dataclass(slots=True)
 class ExperimentConfig:
-    """包裝後的設定，方便以屬性方式存取。"""
-
     raw: Dict[str, Any]
+
+    @property
+    def data(self) -> Dict[str, Any]:
+        return dict(self.raw.get("data", {}))
 
     @property
     def env(self) -> Dict[str, Any]:
@@ -36,35 +36,22 @@ class ExperimentConfig:
     @property
     def run(self) -> Dict[str, Any]:
         return dict(self.raw.get("run", {}))
-    
+
     @property
-    def reward(self) -> Dict[str, Any]:
-        return dict(self.raw.get("reward", {}))
-    
+    def curriculum(self) -> Dict[str, Any]:
+        return dict(self.raw.get("curriculum", {}))
+
     @property
-    def observation(self) -> Dict[str, Any]:
-        return dict(self.raw.get("observation", {}))
-    
+    def risk_sensitive(self) -> Dict[str, Any]:
+        return dict(self.raw.get("risk_sensitive", {}))
+
     @property
-    def action(self) -> Dict[str, Any]:
-        return dict(self.raw.get("action", {}))
-    
+    def backtest(self) -> Dict[str, Any]:
+        return dict(self.raw.get("backtest", {}))
+
     @property
-    def domain_randomization(self) -> Dict[str, Any]:
-        return dict(self.raw.get("domain_randomization", {}))
-    
-    @property
-    def evaluation(self) -> Dict[str, Any]:
-        return dict(self.raw.get("evaluation", {}))
-    
-    @property
-    def sanity_criteria(self) -> Dict[str, Any]:
-        return dict(self.raw.get("sanity_criteria", {}))
-    
-    def is_v2_env(self) -> bool:
-        """檢查是否使用 V2 環境"""
-        env_id = self.env.get("id", "")
-        return "V2" in env_id or "v2" in env_id.lower()
+    def explainability(self) -> Dict[str, Any]:
+        return dict(self.raw.get("explainability", {}))
 
 
 def _parse_file(path: Path) -> Dict[str, Any]:
@@ -74,22 +61,18 @@ def _parse_file(path: Path) -> Dict[str, Any]:
             return yaml.safe_load(f) or {}
         if suffix == ".json":
             return json.load(f)
-    raise ValueError(f"無法解析 {path}，僅支援 YAML/JSON。")
+    raise ValueError(f"Unsupported file format: {path}")
 
 
 def load_config(path: str | Path) -> ExperimentConfig:
-    """讀取設定檔並回傳 ExperimentConfig。"""
-
     config_path = Path(path)
     if not config_path.exists():
-        raise FileNotFoundError(f"找不到設定檔 {config_path}")
+        raise FileNotFoundError(f"Config not found: {config_path}")
     raw = _parse_file(config_path)
     return ExperimentConfig(raw=raw)
 
 
 def export_config(config: ExperimentConfig, target_path: Path) -> None:
-    """將目前設定輸出到 run 目錄，方便追蹤實驗。"""
-
     target_path.parent.mkdir(parents=True, exist_ok=True)
     suffix = target_path.suffix.lower()
     data = config.raw
@@ -101,8 +84,6 @@ def export_config(config: ExperimentConfig, target_path: Path) -> None:
 
 
 def merge_cli_overrides(base: Dict[str, Any], overrides: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    """簡單遞迴合併字典，CLI 參數優先。"""
-
     if not overrides:
         return base
     merged = dict(base)
@@ -114,204 +95,213 @@ def merge_cli_overrides(base: Dict[str, Any], overrides: Optional[Dict[str, Any]
     return merged
 
 
-DEFAULT_ENV_PARAMS: Dict[str, Any] = {
-    "csv_path": "data/btc_usdt_1m_2023.csv",
-    "episode_length": 1000,
-    "fee_rate": 0.0004,
-    "lambda_inv": 0.001,
-    "lambda_turnover": 0.0,
-    "max_inventory": 10.0,
-    "base_spread": 0.2,
-    "alpha": 1.0,
-    "beta": 0.5,
-    "random_start": True,
-}
+def load_data(config: ExperimentConfig, root_dir: Path) -> pd.DataFrame:
+    data_cfg = config.data
+    data_path = data_cfg.get("path", "data/btc_usdt_1m_2023.csv")
+    if not Path(data_path).is_absolute():
+        data_path = root_dir / data_path
+    return pd.read_csv(data_path)
 
 
-def build_env_kwargs(
-    env_cfg: Dict[str, Any],
-    root_dir: Path,
-    *,
-    seed: int | None = None,
-    random_start: bool | None = None,
-    date_range: tuple[str | None, str | None] | None = None,
-    defaults: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """將 config 中的 env 區塊轉換成 HistoricalMarketMakingEnv 需要的參數。"""
-
-    params: Dict[str, Any] = dict(DEFAULT_ENV_PARAMS)
-    if defaults:
-        params.update(defaults)
-    params.update(env_cfg or {})
-
-    # Handle v2 config structure mapping
-    # Map data_file -> csv_path
-    if "data_file" in params:
-        params["csv_path"] = params["data_file"]
+def split_data(data: pd.DataFrame, config: ExperimentConfig) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Split data into train/valid/test sets.
     
-    # Map max_episode_steps -> episode_length
-    if "max_episode_steps" in params:
-        params["episode_length"] = params["max_episode_steps"]
+    Supports both ratio-based (0.7) and date-based ('2023-06-30') splitting.
+    """
+    split_cfg = config.data_split
+    n = len(data)
+    
+    # 檢查是否使用日期範圍（新格式）
+    train_start = split_cfg.get("train_start")
+    train_end_date = split_cfg.get("train_end")
+    valid_start = split_cfg.get("valid_start")
+    valid_end_date = split_cfg.get("valid_end")
+    test_start = split_cfg.get("test_start")
+    test_end_date = split_cfg.get("test_end")
+    
+    # 如果有 timestamp 列並且使用日期格式
+    if isinstance(train_end_date, str) and "timestamp" in data.columns:
+        data = data.copy()
+        # 處理毫秒時間戳或字串日期
+        if data["timestamp"].dtype in ["int64", "float64"]:
+            data["_datetime"] = pd.to_datetime(data["timestamp"], unit="ms")
+        else:
+            data["_datetime"] = pd.to_datetime(data["timestamp"], errors="coerce")
         
-    # Map fee -> fee_rate
-    if "fee" in params:
-        params["fee_rate"] = params["fee"]
-
-    # Map nested features
-    if "inventory_features" in params and isinstance(params["inventory_features"], dict):
-        inv_feats = params["inventory_features"]
-        if "max_inventory" in inv_feats:
-            params["max_inventory"] = inv_feats["max_inventory"]
-        if "lambda_inventory" in inv_feats:
-            params["lambda_inv"] = inv_feats["lambda_inventory"]
-            
-    if "spread_features" in params and isinstance(params["spread_features"], dict):
-        spread_feats = params["spread_features"]
-        if "base_spread" in spread_feats:
-            params["base_spread"] = spread_feats["base_spread"]
-
-    csv_path = Path(params.get("csv_path", DEFAULT_ENV_PARAMS["csv_path"]))
-    if not csv_path.is_absolute():
-        csv_path = root_dir / csv_path
-
-    resolved_random_start = random_start if random_start is not None else params.get("random_start", True)
-
-    # Only pass arguments that HistoricalMarketMakingEnv accepts
-    # Note: If the Env is updated to support more v2 params, add them here.
-    kwargs = {
-        "csv_path": str(csv_path),
-        "episode_length": int(params.get("episode_length", DEFAULT_ENV_PARAMS["episode_length"])),
-        "fee_rate": float(params.get("fee_rate", DEFAULT_ENV_PARAMS["fee_rate"])),
-        "lambda_inv": float(params.get("lambda_inv", DEFAULT_ENV_PARAMS["lambda_inv"])),
-        "lambda_turnover": float(params.get("lambda_turnover", DEFAULT_ENV_PARAMS["lambda_turnover"])),
-        "max_inventory": float(params.get("max_inventory", DEFAULT_ENV_PARAMS["max_inventory"])),
-        "base_spread": float(params.get("base_spread", DEFAULT_ENV_PARAMS["base_spread"])),
-        "alpha": float(params.get("alpha", DEFAULT_ENV_PARAMS["alpha"])),
-        "beta": float(params.get("beta", DEFAULT_ENV_PARAMS["beta"])),
-        "random_start": bool(resolved_random_start),
-    }
-    if seed is not None:
-        kwargs["seed"] = seed
-    resolved_range = date_range or params.get("date_range")
-    if resolved_range is not None:
-        kwargs["date_range"] = resolved_range
-    return kwargs
+        if train_start and train_end_date:
+            train_mask = (data["_datetime"] >= train_start) & (data["_datetime"] <= train_end_date)
+            train_data = data[train_mask].drop(columns=["_datetime"]).reset_index(drop=True)
+        else:
+            train_data = pd.DataFrame()
+        
+        if valid_start and valid_end_date:
+            valid_mask = (data["_datetime"] >= valid_start) & (data["_datetime"] <= valid_end_date)
+            valid_data = data[valid_mask].drop(columns=["_datetime"]).reset_index(drop=True)
+        else:
+            valid_data = pd.DataFrame()
+        
+        if test_start and test_end_date:
+            test_mask = (data["_datetime"] >= test_start) & (data["_datetime"] <= test_end_date)
+            test_data = data[test_mask].drop(columns=["_datetime"]).reset_index(drop=True)
+        else:
+            test_data = pd.DataFrame()
+        
+        return train_data, valid_data, test_data
+    
+    # 使用比例分割（舊格式）
+    train_end = split_cfg.get("train_end", 0.7)
+    valid_end = split_cfg.get("valid_end", 0.85)
+    
+    if isinstance(train_end, float) and 0 < train_end < 1:
+        train_end = int(n * train_end)
+    if isinstance(valid_end, float) and 0 < valid_end < 1:
+        valid_end = int(n * valid_end)
+    
+    train_data = data.iloc[:train_end].reset_index(drop=True)
+    valid_data = data.iloc[train_end:valid_end].reset_index(drop=True)
+    test_data = data.iloc[valid_end:].reset_index(drop=True)
+    return train_data, valid_data, test_data
 
 
-# =============================================================================
-# V2 Environment Support
-# =============================================================================
-
-def build_env_v2_kwargs(
-    config: ExperimentConfig,
-    root_dir: Path,
-    *,
-    seed: Optional[int] = None,
-    date_range: Optional[Tuple[str, str]] = None,
-    enable_domain_rand: Optional[bool] = None,
-) -> Dict[str, Any]:
-    """為 MarketMakingEnvV2 建構參數。"""
+def create_env(data: pd.DataFrame, config: ExperimentConfig, seed: Optional[int] = None, enable_domain_rand: Optional[bool] = None):
     from envs.market_making_env_v2 import (
-        RewardConfig, RewardMode, ObservationConfig, 
+        MarketMakingEnvV2, RewardConfig, ObservationConfig,
         ActionConfig, DomainRandomizationConfig
     )
-    
     env_cfg = config.env
-    reward_cfg = config.reward
-    obs_cfg = config.observation
-    action_cfg = config.action
-    dr_cfg = config.domain_randomization
-    
-    # 資料路徑
-    csv_path = env_cfg.get("data_file", "data/btc_usdt_1m_2023.csv")
-    if not Path(csv_path).is_absolute():
-        csv_path = str(root_dir / csv_path)
-    
-    # 建構 RewardConfig
-    reward_mode = RewardMode(reward_cfg.get("mode", "shaped"))
-    reward_config = RewardConfig(
-        mode=reward_mode,
-        lambda_inventory=reward_cfg.get("lambda_inventory", 0.0005),
-        lambda_turnover=reward_cfg.get("lambda_turnover", 0.0),
-        gamma=reward_cfg.get("gamma", 0.99),
-        sparse_scale=reward_cfg.get("sparse_scale", 0.01),
-        terminal_bonus_weight=reward_cfg.get("terminal_bonus_weight", 0.5),
-    )
-    
-    # 建構 ObservationConfig
-    observation_config = ObservationConfig(
-        include_price=obs_cfg.get("include_price", True),
-        include_inventory=obs_cfg.get("include_inventory", True),
-        include_time=obs_cfg.get("include_time", True),
-        include_volatility=obs_cfg.get("include_volatility", True),
-        include_momentum=obs_cfg.get("include_momentum", True),
-        include_volume=obs_cfg.get("include_volume", True),
-        include_inventory_age=obs_cfg.get("include_inventory_age", True),
-        volatility_windows=obs_cfg.get("volatility_windows", [5, 15, 60]),
-        momentum_windows=obs_cfg.get("momentum_windows", [5, 15]),
-    )
-    
-    # 建構 ActionConfig
-    action_config = ActionConfig(
-        mode=action_cfg.get("mode", "asymmetric"),
-        allow_no_quote=action_cfg.get("allow_no_quote", True),
-        max_spread_multiplier=action_cfg.get("max_spread_multiplier", 3.0),
-        min_spread_multiplier=action_cfg.get("min_spread_multiplier", 0.1),
-    )
-    
-    # 建構 DomainRandomizationConfig
-    dr_enabled = enable_domain_rand if enable_domain_rand is not None else dr_cfg.get("enabled", False)
-    domain_rand_config = DomainRandomizationConfig(
-        enabled=dr_enabled,
-        fee_rate_range=tuple(dr_cfg.get("fee_rate_range", [0.0003, 0.0005])),
-        base_spread_range=tuple(dr_cfg.get("base_spread_range", [15.0, 35.0])),
-        volatility_multiplier_range=tuple(dr_cfg.get("volatility_multiplier_range", [0.8, 1.2])),
-        fill_probability_noise=dr_cfg.get("fill_probability_noise", 0.1),
-    )
-    
     kwargs = {
-        "csv_path": csv_path,
-        "episode_length": env_cfg.get("episode_length", 1000),
+        "df": data,  # 直接傳入 DataFrame
+        "initial_cash": env_cfg.get("initial_cash", 100000),
         "fee_rate": env_cfg.get("fee_rate", 0.0004),
+        "max_inventory": env_cfg.get("max_inventory", 10.0),
+        "episode_length": env_cfg.get("episode_length", 1000),
         "base_spread": env_cfg.get("base_spread", 25.0),
-        "max_inventory": env_cfg.get("max_inventory", 5.0),
-        "initial_cash": env_cfg.get("initial_cash", 10000.0),
         "random_start": env_cfg.get("random_start", True),
-        "reward_config": reward_config,
-        "obs_config": observation_config,
-        "action_config": action_config,
-        "domain_rand_config": domain_rand_config,
     }
+    
+    # 處理 reward_config
+    reward_cfg = env_cfg.get("reward_config", {})
+    if reward_cfg:
+        kwargs["reward_config"] = RewardConfig(**{
+            k: v for k, v in reward_cfg.items()
+            if k in RewardConfig.__dataclass_fields__
+        })
+    
+    # 處理 obs_config
+    obs_cfg = env_cfg.get("obs_config", {})
+    if obs_cfg:
+        kwargs["obs_config"] = ObservationConfig(**{
+            k: v for k, v in obs_cfg.items()
+            if k in ObservationConfig.__dataclass_fields__
+        })
+    
+    # 處理 action_config
+    action_cfg = env_cfg.get("action_config", {})
+    if action_cfg:
+        kwargs["action_config"] = ActionConfig(**{
+            k: v for k, v in action_cfg.items()
+            if k in ActionConfig.__dataclass_fields__
+        })
+    
+    # 處理 domain_randomization
+    dr_cfg = env_cfg.get("domain_randomization", {})
+    if enable_domain_rand is not None:
+        dr_cfg = dict(dr_cfg)  # 複製以避免修改原始 config
+        dr_cfg["enabled"] = enable_domain_rand
+    if dr_cfg:
+        kwargs["domain_rand_config"] = DomainRandomizationConfig(**{
+            k: v for k, v in dr_cfg.items()
+            if k in DomainRandomizationConfig.__dataclass_fields__
+        })
     
     if seed is not None:
         kwargs["seed"] = seed
-    
-    if date_range is not None:
-        kwargs["date_range"] = date_range
-    
-    return kwargs
+    return MarketMakingEnvV2(**kwargs)
 
 
 def create_env_from_config(
     config: ExperimentConfig,
     root_dir: Path,
-    *,
     seed: Optional[int] = None,
     date_range: Optional[Tuple[str, str]] = None,
     enable_domain_rand: Optional[bool] = None,
 ):
-    """根據 Config 自動建立對應版本的環境。"""
-    if config.is_v2_env():
-        from envs.market_making_env_v2 import MarketMakingEnvV2
-        kwargs = build_env_v2_kwargs(
-            config, root_dir,
-            seed=seed,
-            date_range=date_range,
-            enable_domain_rand=enable_domain_rand,
-        )
-        return MarketMakingEnvV2(**kwargs)
-    else:
-        from envs.historical_market_making_env import HistoricalMarketMakingEnv
-        kwargs = build_env_kwargs(config.env, root_dir, seed=seed, date_range=date_range)
-        return HistoricalMarketMakingEnv(**kwargs)
+    """Create environment from config with optional date filtering.
+    
+    Args:
+        config: Experiment configuration
+        root_dir: Project root directory
+        seed: Random seed
+        date_range: Optional (start_date, end_date) tuple for filtering data
+        enable_domain_rand: Whether to enable domain randomization
+    
+    Returns:
+        MarketMakingEnvV2 instance
+    """
+    data = load_data(config, root_dir)
+    
+    # Filter by date range if provided
+    if date_range and date_range[0] and date_range[1]:
+        if "timestamp" in data.columns:
+            data["timestamp"] = pd.to_datetime(data["timestamp"])
+            mask = (data["timestamp"] >= date_range[0]) & (data["timestamp"] <= date_range[1])
+            data = data[mask].reset_index(drop=True)
+    
+    return create_env(data, config, seed, enable_domain_rand)
 
+
+def create_env_fn(data: pd.DataFrame, config: ExperimentConfig, seed: Optional[int] = None, enable_domain_rand: Optional[bool] = None):
+    def _make_env():
+        return create_env(data, config, seed, enable_domain_rand)
+    return _make_env
+
+
+def get_train_params(config: ExperimentConfig) -> Dict[str, Any]:
+    train_cfg = config.train
+    return {
+        "total_timesteps": train_cfg.get("total_timesteps", 100000),
+        "learning_rate": train_cfg.get("learning_rate", 3e-4),
+        "buffer_size": train_cfg.get("buffer_size", 100000),
+        "batch_size": train_cfg.get("batch_size", 256),
+        "gamma": train_cfg.get("gamma", 0.99),
+        "tau": train_cfg.get("tau", 0.02),
+        "train_freq": train_cfg.get("train_freq", 1),
+        "gradient_steps": train_cfg.get("gradient_steps", 1),
+        "n_envs": train_cfg.get("n_envs", 4),
+        "eval_freq": train_cfg.get("eval_freq", 10000),
+        "n_eval_episodes": train_cfg.get("n_eval_episodes", 5),
+    }
+
+
+def get_algorithm_params(config: ExperimentConfig, algorithm: str = "SAC") -> Dict[str, Any]:
+    train_cfg = config.train
+    common_params = {
+        "learning_rate": train_cfg.get("learning_rate", 3e-4),
+        "batch_size": train_cfg.get("batch_size", 256),
+        "gamma": train_cfg.get("gamma", 0.99),
+        "verbose": 0,
+    }
+    if algorithm.upper() == "SAC":
+        common_params.update({
+            "buffer_size": train_cfg.get("buffer_size", 100000),
+            "tau": train_cfg.get("tau", 0.02),
+            "train_freq": train_cfg.get("train_freq", 1),
+            "gradient_steps": train_cfg.get("gradient_steps", 1),
+            "ent_coef": train_cfg.get("ent_coef", "auto"),
+        })
+    elif algorithm.upper() == "PPO":
+        common_params.update({
+            "n_steps": train_cfg.get("n_steps", 2048),
+            "n_epochs": train_cfg.get("n_epochs", 10),
+            "ent_coef": train_cfg.get("ent_coef", 0.01),
+            "clip_range": train_cfg.get("clip_range", 0.2),
+            "gae_lambda": train_cfg.get("gae_lambda", 0.95),
+        })
+    elif algorithm.upper() == "TD3":
+        common_params.update({
+            "buffer_size": train_cfg.get("buffer_size", 100000),
+            "tau": train_cfg.get("tau", 0.005),
+            "policy_delay": train_cfg.get("policy_delay", 2),
+            "target_policy_noise": train_cfg.get("target_policy_noise", 0.2),
+        })
+    return common_params

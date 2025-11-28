@@ -63,3 +63,4 @@ data/*.parquet
 
 # Optuna
 *.db
+data/*.csv
