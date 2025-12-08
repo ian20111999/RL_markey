@@ -17,16 +17,26 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # 預設參數
-BASE_MODEL="runs/v3_nuclear_long_run_20251207_002757/best_model/best_model.zip"
+DEFAULT_BASE_MODEL="runs/v3_nuclear_long_run_20251207_002757/best_model/best_model.zip"
+BASE_MODEL="$DEFAULT_BASE_MODEL"
 CONFIG="configs/env_v3_stabilized.yaml"
 TOTAL_TIMESTEPS=300000
 LEARNING_RATE=3e-5
 BATCH_SIZE=512
 QUICK_MODE=false
 
-# 檢查參數
-if [[ "$1" == "--quick" ]]; then
-    QUICK_MODE=true
+# 解析參數
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        --quick) QUICK_MODE=true ;;
+        --model) BASE_MODEL="$2"; shift ;;
+        *) echo "Unknown parameter passed: $1"; exit 1 ;;
+    esac
+    shift
+done
+
+# 根據模式調整參數
+if [ "$QUICK_MODE" = true ]; then
     TOTAL_TIMESTEPS=10000
     echo -e "${YELLOW}[Quick Test Mode]${NC} Training for only 10k steps"
 fi
@@ -34,6 +44,7 @@ fi
 echo -e "${BLUE}======================================${NC}"
 echo -e "${BLUE}   重新啟動訓練 - 使用修復後的程式碼${NC}"
 echo -e "${BLUE}======================================${NC}"
+echo -e "Base Model: ${YELLOW}$BASE_MODEL${NC}"
 
 # ==================== 檢查環境 ====================
 echo -e "\n${YELLOW}[1/6] 檢查環境...${NC}"
@@ -91,7 +102,7 @@ echo -e "${BLUE}======================================${NC}"
 # 建立訓練日誌檔案
 TRAIN_LOG="$RUN_DIR/training.log"
 
-# 執行訓練
+# 執行訓練 (使用 grep 過濾掉 Reward 異常警告，但保留在 log 檔中)
 python scripts/run_stabilization.py \
     --base_model "$BASE_MODEL" \
     --config "$CONFIG" \
@@ -99,7 +110,7 @@ python scripts/run_stabilization.py \
     --learning_rate $LEARNING_RATE \
     --batch_size $BATCH_SIZE \
     --output_dir "$RUN_DIR" \
-    2>&1 | tee "$TRAIN_LOG"
+    2>&1 | tee "$TRAIN_LOG" | grep --line-buffered -v "Reward 異常"
 
 TRAIN_EXIT_CODE=${PIPESTATUS[0]}
 

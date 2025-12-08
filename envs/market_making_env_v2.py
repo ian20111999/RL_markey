@@ -1388,6 +1388,11 @@ class MarketMakingEnvV2(gym.Env):
             if abs(scaled_reward) > 100:
                 import warnings
                 warnings.warn(f"⚠️  Reward 異常: {scaled_reward:.2f} (raw={raw_reward:.2f}, scale={scale})")
+                
+                # [新增] 強制截斷獎勵，保護訓練穩定性
+                # 將獎勵限制在 [-10, 10] 之間，避免梯度爆炸
+                clip_value = 10.0
+                scaled_reward = max(min(scaled_reward, clip_value), -clip_value)
             
             return scaled_reward
         
