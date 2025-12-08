@@ -38,19 +38,34 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 # 核心導入
-from envs.market_making_env_v2 import MarketMakingEnvV2
+from envs.market_making_env_v2 import (
+    MarketMakingEnvV2,
+    RewardConfig,
+    RewardMode,
+    ObservationConfig,
+    ActionConfig,
+    DomainRandomizationConfig,
+    FillModelEnvConfig,
+    AdvancedObservationConfig,
+)
 from utils.config import load_config as load_yaml_config, load_data, create_env as create_base_env
 from utils.algorithms import create_model, get_algo_class, get_default_config, AlgorithmComparator
-from utils.risk_sensitive import RiskAwareRewardWrapper, RiskMetricsCalculator
+from utils.risk_sensitive import (
+    RiskAwareRewardWrapper, 
+    RiskMetricsCalculator,
+    CVaRCallback,
+    DrawdownEarlyStopping,
+    DynamicPositionLimitWrapper,
+)
 from utils.curriculum import CurriculumScheduler, CurriculumCallback, CurriculumEnvWrapper, create_curriculum_env
-from utils.backtesting import BacktestEngine
+from utils.backtesting import BacktestEngine, WalkForwardAnalyzer, MonteCarloSimulator, RobustnessTester
 from utils.report_generator import ReportGenerator, QuickReportBuilder, ReportConfig
 
 # 可選導入
 try:
     from stable_baselines3 import SAC, PPO, TD3
     from stable_baselines3.common.vec_env import DummyVecEnv
-    from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
+    from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback, StopTrainingOnNoModelImprovement, CallbackList
     from stable_baselines3.common.evaluation import evaluate_policy
     HAS_SB3 = True
 except ImportError:
@@ -86,6 +101,68 @@ except ImportError:
     HAS_DISTRIBUTED = False
 
 
+# =============================================================================
+# 🆕 數據增強函數
+# =============================================================================
+
+def flip_price_data(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    翻轉價格數據，將上漲市場轉換為下跌市場
+    
+    原理：
+    - 計算價格的對數收益率
+    - 反轉收益率（乘以 -1）
+    - 重建價格序列
+    
+    這樣可以從牛市數據創造熊市數據，增加訓練多樣性
+    
+    Args:
+        df: 原始 DataFrame (需包含 open, high, low, close, volume)
+    
+    Returns:
+        翻轉後的 DataFrame
+    """
+    df = df.copy()
+    
+    # 使用第一個價格作為基準
+    base_price = df['close'].iloc[0]
+    
+    # 計算對數收益率
+    log_returns = np.log(df['close'] / df['close'].shift(1)).fillna(0)
+    
+    # 反轉收益率
+    flipped_returns = -log_returns
+    
+    # 重建價格 (從最後一個價格開始，確保不會出現負價格)
+    flipped_close = np.zeros(len(df))
+    flipped_close[0] = base_price
+    for i in range(1, len(df)):
+        flipped_close[i] = flipped_close[i-1] * np.exp(flipped_returns.iloc[i])
+    
+    # 計算 OHLC 的比例關係，保持相對結構
+    close_ratio = flipped_close / df['close'].values
+    
+    df['open'] = df['open'] * close_ratio
+    df['high'] = df['close'] * close_ratio + (df['high'] - df['close']).abs() * close_ratio  # 高點變低點概念
+    df['low'] = df['close'] * close_ratio - (df['close'] - df['low']).abs() * close_ratio   # 低點變高點概念
+    df['close'] = flipped_close
+    
+    # 交換 high 和 low 如果順序不對
+    high_low_swap = df['high'] < df['low']
+    df.loc[high_low_swap, ['high', 'low']] = df.loc[high_low_swap, ['low', 'high']].values
+    
+    # 確保價格為正
+    min_price = df[['open', 'high', 'low', 'close']].min().min()
+    if min_price <= 0:
+        adjustment = abs(min_price) + 1
+        df[['open', 'high', 'low', 'close']] += adjustment
+    
+    # Volume 保持不變（或可以輕微調整）
+    # df['volume'] = df['volume']  # 保持原樣
+    
+    return df
+
+
 def load_config(config_path: str) -> dict:
     """載入 YAML 配置檔（包裝 utils.config）"""
     cfg = load_yaml_config(config_path)
@@ -97,6 +174,7 @@ def create_env(
     config: dict,
     use_realistic_fill: bool = False,
     use_risk_wrapper: bool = False,
+    use_dynamic_position_limit: bool = False,
     seed: int = None
 ):
     """
@@ -107,33 +185,131 @@ def create_env(
         config: 配置字典
         use_realistic_fill: 是否使用真實填充模型
         use_risk_wrapper: 是否使用風險感知包裝器
+        use_dynamic_position_limit: 是否使用動態倉位限制
     
     Returns:
         環境實例
     """
     env_config = config.get('env', {})
+    reward_config = config.get('reward', {})
+    action_config = config.get('action', {})
+    obs_config = config.get('observation', {})
+    dr_config = config.get('domain_randomization', {})
+    fill_config = config.get('fill_model', {})
+    adv_obs_config = config.get('advanced_observation', {})
     
-    env = MarketMakingEnvV2(
-        data=data,
-        initial_cash=env_config.get('initial_cash', 100000),
-        fee_rate=env_config.get('fee_rate', 0.0004),
-        max_inventory=env_config.get('max_inventory', 10.0),
-        episode_length=env_config.get('episode_length', 1000),
-        lookback=env_config.get('lookback', 60),
-        reward_config=env_config.get('reward_config', {}),
-        obs_config=env_config.get('obs_config', {}),
-        action_config=env_config.get('action_config', {}),
-        domain_randomization=env_config.get('domain_randomization', {}),
-        random_start=env_config.get('random_start', True)
+    # 建構 Reward Config
+    reward_mode_str = reward_config.get('mode', 'shaped')
+    reward_cfg = RewardConfig(
+        mode=RewardMode(reward_mode_str),
+        lambda_inventory=reward_config.get('lambda_inventory', 0.005),
+        lambda_turnover=reward_config.get('lambda_turnover', 0.0001),
+        gamma=reward_config.get('gamma', 0.99),
+        sparse_scale=reward_config.get('sparse_scale', 0.01),
+        terminal_bonus_weight=reward_config.get('terminal_bonus_weight', 0.3),
+        # 🆕 做市獎勵參數
+        spread_capture_bonus=reward_config.get('spread_capture_bonus', 0.0),
+        round_trip_bonus=reward_config.get('round_trip_bonus', 0.0),
+        inventory_revert_bonus=reward_config.get('inventory_revert_bonus', 0.0),
+        asymmetric_penalty=reward_config.get('asymmetric_penalty', 0.0),
+        # 🆕 v3: 獎勵縮放（穩定訓練）
+        reward_scale=reward_config.get('reward_scale', 1.0),
     )
     
+    # 建構 Action Config
+    action_cfg = ActionConfig(
+        mode=action_config.get('mode', 'asymmetric'),
+        allow_no_quote=action_config.get('allow_no_quote', False),
+        max_spread_multiplier=action_config.get('max_spread_multiplier', 3.0),
+        min_spread_multiplier=action_config.get('min_spread_multiplier', 0.3),
+    )
+    
+    # 建構 Domain Randomization Config
+    dr_cfg = DomainRandomizationConfig(
+        enabled=dr_config.get('enabled', False),
+        fee_rate_range=tuple(dr_config.get('fee_rate_range', [0.0003, 0.0005])),
+        base_spread_range=tuple(dr_config.get('base_spread_range', [20.0, 30.0])),
+        volatility_multiplier_range=tuple(dr_config.get('volatility_multiplier_range', [0.8, 1.2])),
+        fill_probability_noise=dr_config.get('fill_probability_noise', 0.05),
+    )
+    
+    # 建構 Fill Model Config
+    fill_model_cfg = FillModelEnvConfig(
+        enabled=fill_config.get('enabled', False) or use_realistic_fill,
+        mode=fill_config.get('mode', 'moderate'),
+        enable_queue_position=fill_config.get('enable_queue_position', True),
+        enable_slippage=fill_config.get('enable_slippage', True),
+        slippage_bps=fill_config.get('slippage_bps', 1.0),
+        enable_market_impact=fill_config.get('enable_market_impact', False),
+        enable_adverse_selection=fill_config.get('enable_adverse_selection', True),
+        adverse_selection_prob=fill_config.get('adverse_selection_prob', 0.1),
+    )
+    
+    # 建構 Advanced Observation Config
+    adv_obs_cfg = AdvancedObservationConfig(
+        include_order_flow_imbalance=adv_obs_config.get('include_order_flow_imbalance', False),
+        order_flow_window=adv_obs_config.get('order_flow_window', 20),
+        include_vwap_deviation=adv_obs_config.get('include_vwap_deviation', False),
+        vwap_window=adv_obs_config.get('vwap_window', 60),
+        include_multi_timeframe_momentum=adv_obs_config.get('include_multi_timeframe_momentum', False),
+        mtf_windows=adv_obs_config.get('mtf_windows', [15, 60, 240]),
+        include_volatility_forecast=adv_obs_config.get('include_volatility_forecast', False),
+        ewma_span=adv_obs_config.get('ewma_span', 20),
+        include_microstructure=adv_obs_config.get('include_microstructure', False),
+    )
+    
+    # 🆕 建構 Observation Config (包含趨勢特徵)
+    obs_cfg = ObservationConfig(
+        include_price=obs_config.get('include_price', True),
+        include_inventory=obs_config.get('include_inventory', True),
+        include_time=obs_config.get('include_time', True),
+        include_volatility=obs_config.get('include_volatility', True),
+        include_momentum=obs_config.get('include_momentum', True),
+        include_volume=obs_config.get('include_volume', True),
+        include_inventory_age=obs_config.get('include_inventory_age', True),
+        include_trend=obs_config.get('include_trend', False),  # 🆕 趨勢特徵
+        volatility_windows=obs_config.get('volatility_windows', [5, 15, 60]),
+        momentum_windows=obs_config.get('momentum_windows', [5, 15]),
+        trend_windows=obs_config.get('trend_windows', [60, 240, 1440]),  # 🆕 趨勢窗口
+    )
+    
+    env = MarketMakingEnvV2(
+        df=data,
+        initial_cash=env_config.get('initial_cash', 10000),
+        fee_rate=env_config.get('fee_rate', 0.0004),
+        max_inventory=env_config.get('max_inventory', 5.0),
+        episode_length=env_config.get('episode_length', 1440),
+        base_spread=env_config.get('base_spread', 25.0),
+        random_start=env_config.get('random_start', True),
+        seed=seed,
+        reward_config=reward_cfg,
+        obs_config=obs_cfg,  # 🆕 加入 ObservationConfig
+        action_config=action_cfg,
+        domain_rand_config=dr_cfg,
+        fill_model_config=fill_model_cfg,
+        advanced_obs_config=adv_obs_cfg,
+    )
+    
+    # 動態倉位限制
+    if use_dynamic_position_limit:
+        dpl_config = config.get('dynamic_position_limit', {})
+        env = DynamicPositionLimitWrapper(
+            env,
+            base_max_inventory=dpl_config.get('base_max_inventory', env_config.get('max_inventory', 5.0)),
+            volatility_threshold=dpl_config.get('volatility_threshold', 0.02),
+            min_inventory_ratio=dpl_config.get('min_inventory_ratio', 0.3),
+            volatility_window=dpl_config.get('volatility_window', 20),
+        )
+    
+    # 風險感知包裝器
     if use_risk_wrapper:
         risk_config = config.get('risk_sensitive', {})
         env = RiskAwareRewardWrapper(
             env,
             risk_lambda=risk_config.get('risk_lambda', 0.1),
             risk_type=risk_config.get('risk_type', 'variance'),
-            window_size=risk_config.get('window_size', 100)
+            window_size=risk_config.get('window_size', 100),
+            cvar_alpha=risk_config.get('cvar_alpha', 0.05),
         )
     
     return env
@@ -153,20 +329,52 @@ def run_standard_training(
     
     logger.info(f"Starting standard training with {algorithm}...")
     
+    # 讀取配置
+    train_config = config.get('train', {})
+    risk_config = config.get('risk_sensitive', {})
+    fill_config = config.get('fill_model', {})
+    
+    # 決定是否使用進階功能
+    use_risk_wrapper = risk_config.get('enabled', False)
+    use_realistic_fill = fill_config.get('enabled', False)
+    use_dynamic_position_limit = config.get('dynamic_position_limit', {}).get('enabled', False)
+    
     # 建立環境
-    env = create_env(train_data, config)
-    eval_env = create_env(valid_data, config)
+    env = create_env(
+        train_data, config, 
+        use_realistic_fill=use_realistic_fill,
+        use_risk_wrapper=use_risk_wrapper,
+        use_dynamic_position_limit=use_dynamic_position_limit
+    )
+    eval_env = create_env(
+        valid_data, config, 
+        use_realistic_fill=use_realistic_fill,
+        use_risk_wrapper=False,  # 評估時不用風險包裝器
+        use_dynamic_position_limit=use_dynamic_position_limit
+    )
     
     vec_env = DummyVecEnv([lambda: env])
     
     # 取得超參數
-    train_config = config.get('train', {})
     hyperparams = get_default_config(algorithm)
     hyperparams.update({
         'learning_rate': train_config.get('learning_rate', 3e-4),
         'batch_size': train_config.get('batch_size', 256),
         'gamma': train_config.get('gamma', 0.99),
     })
+    
+    # 🔧 支援更多 SAC 超參數
+    if algorithm.upper() == 'SAC':
+        if 'ent_coef' in train_config:
+            hyperparams['ent_coef'] = train_config['ent_coef']
+        if 'learning_starts' in train_config:
+            hyperparams['learning_starts'] = train_config['learning_starts']
+        if 'tau' in train_config:
+            hyperparams['tau'] = train_config['tau']
+        if 'target_entropy' in train_config:
+            hyperparams['target_entropy'] = train_config['target_entropy']
+        if 'buffer_size' in train_config:
+            hyperparams['buffer_size'] = train_config['buffer_size']
     
     # 建立模型
     model = create_model(
@@ -179,6 +387,41 @@ def run_standard_training(
     # 設定回調
     callbacks = []
     
+    # CVaR 監控回調
+    if risk_config.get('cvar_monitoring', False):
+        cvar_callback = CVaRCallback(
+            alpha=risk_config.get('cvar_alpha', 0.05),
+            cvar_threshold=risk_config.get('cvar_threshold', -500.0),
+            window_size=risk_config.get('cvar_window', 1000),
+            check_freq=train_config.get('eval_freq', 10000),
+            verbose=1,
+        )
+        callbacks.append(cvar_callback)
+        logger.info("CVaR monitoring enabled")
+    
+    # Drawdown 提前停止
+    if risk_config.get('drawdown_early_stopping', False):
+        dd_callback = DrawdownEarlyStopping(
+            max_drawdown_threshold=risk_config.get('max_drawdown_threshold', 0.2),
+            check_freq=train_config.get('eval_freq', 10000),
+            eval_env=eval_env,
+            n_eval_episodes=5,
+            verbose=1,
+        )
+        callbacks.append(dd_callback)
+        logger.info("Drawdown early stopping enabled")
+    
+    # 早停設定
+    early_stopping_config = train_config.get('early_stopping', {})
+    stop_callback = None
+    if early_stopping_config.get('enabled', False):
+        stop_callback = StopTrainingOnNoModelImprovement(
+            max_no_improvement_evals=early_stopping_config.get('patience', 15),
+            min_evals=5,  # 至少評估 5 次才開始檢查早停
+            verbose=1
+        )
+        logger.info(f"Early stopping enabled with patience={early_stopping_config.get('patience', 15)}")
+    
     eval_callback = EvalCallback(
         eval_env,
         best_model_save_path=str(output_dir / "best_model"),
@@ -186,7 +429,8 @@ def run_standard_training(
         eval_freq=train_config.get('eval_freq', 10000),
         n_eval_episodes=train_config.get('n_eval_episodes', 5),
         deterministic=True,
-        render=False
+        render=False,
+        callback_after_eval=stop_callback  # 在評估後檢查是否早停
     )
     callbacks.append(eval_callback)
     
@@ -348,48 +592,40 @@ def run_backtesting(
     logger.info("Running backtesting analysis...")
     
     def make_env():
-        return create_env(test_data, config)
+        return create_env(data=test_data, config=config)
     
     engine = BacktestEngine(
-        env_fn=make_env,
-        policy=model
+        env_factory=make_env,
+        initial_capital=config.get('env', {}).get('initial_capital', 100_000),
+        transaction_cost_bps=config.get('env', {}).get('fee_rate', 0.0004) * 10000,
     )
     
     backtest_config = config.get('backtest', {})
     
     # 基本回測
     backtest_results = engine.run_backtest(
+        model=model,
         n_episodes=backtest_config.get('n_episodes', 20)
     )
     
     results = {'basic_backtest': backtest_results}
     
-    # Walk-forward 分析
-    if backtest_config.get('walk_forward', {}).get('enabled', False):
-        wf_config = backtest_config['walk_forward']
-        wf_results = engine.run_walk_forward_analysis(
-            train_window=wf_config.get('train_window_days', 30),
-            test_window=wf_config.get('test_window_days', 7),
-            step_size=wf_config.get('step_days', 7)
-        )
-        results['walk_forward'] = wf_results
+    # Walk-forward 分析（需要 WalkForwardAnalyzer 類別）
+    # if backtest_config.get('walk_forward', {}).get('enabled', False):
+    #     wf_config = backtest_config['walk_forward']
+    #     # 需要使用 WalkForwardAnalyzer，暫時跳過
+    #     pass
     
-    # Monte Carlo 模擬
-    if backtest_config.get('monte_carlo', {}).get('enabled', False):
-        mc_config = backtest_config['monte_carlo']
-        mc_results = engine.run_monte_carlo_simulation(
-            n_simulations=mc_config.get('n_simulations', 1000),
-            n_periods=mc_config.get('n_periods', 252)
-        )
-        results['monte_carlo'] = mc_results
+    # Monte Carlo 模擬（需要 MonteCarloSimulator 類別）
+    # if backtest_config.get('monte_carlo', {}).get('enabled', False):
+    #     mc_config = backtest_config['monte_carlo']
+    #     # 需要使用 MonteCarloSimulator，暫時跳過
+    #     pass
     
-    # 交易成本分析
-    if backtest_config.get('robustness', {}).get('enabled', False):
-        tc_results = engine.analyze_transaction_costs(
-            fee_rates=backtest_config['robustness'].get('test_fee_rates', 
-                      [0.0001, 0.0002, 0.0004, 0.0006, 0.001])
-        )
-        results['transaction_cost_analysis'] = tc_results
+    # 交易成本分析（需要 RobustnessTester 類別）
+    # if backtest_config.get('robustness', {}).get('enabled', False):
+    #     # 需要使用 RobustnessTester，暫時跳過
+    #     pass
     
     # 保存結果
     with open(output_dir / "backtest_results.json", 'w') as f:
@@ -411,7 +647,7 @@ def run_explainability_analysis(
     
     logger.info("Running explainability analysis...")
     
-    env = create_env(test_data, config)
+    env = create_env(df=test_data, config=config)
     analyzer = PolicyAnalyzer(model, env)
     
     explainability_config = config.get('explainability', {})
@@ -567,35 +803,73 @@ def main():
     logger.info(f"Loading data from {data_path}...")
     data = pd.read_csv(data_path)
     
-    # 分割數據
+    # 分割數據（支援日期格式和比例格式）
     split_config = config.get('data_split', {})
     n = len(data)
     
-    train_end = int(n * split_config.get('train_end', 0.7))
-    valid_end = int(n * split_config.get('valid_end', 0.85))
+    train_end_cfg = split_config.get('train_end', 0.7)
+    valid_end_cfg = split_config.get('valid_end', 0.85)
     
-    train_data = data.iloc[:train_end].reset_index(drop=True)
-    valid_data = data.iloc[train_end:valid_end].reset_index(drop=True)
-    test_data = data.iloc[valid_end:].reset_index(drop=True)
+    # 檢查是否使用日期格式
+    if isinstance(train_end_cfg, str):
+        # 使用日期格式分割
+        if data["timestamp"].dtype in ["int64", "float64"]:
+            data["_datetime"] = pd.to_datetime(data["timestamp"], unit="ms")
+        else:
+            data["_datetime"] = pd.to_datetime(data["timestamp"])
+        
+        train_start = split_config.get("train_start", "2023-01-01")
+        train_end = split_config.get("train_end", "2023-06-30")
+        valid_start = split_config.get("valid_start", "2023-07-01")
+        valid_end = split_config.get("valid_end", "2023-08-31")
+        test_start = split_config.get("test_start", "2023-09-01")
+        test_end = split_config.get("test_end", "2023-12-31")
+        
+        train_mask = (data["_datetime"] >= train_start) & (data["_datetime"] <= train_end)
+        valid_mask = (data["_datetime"] >= valid_start) & (data["_datetime"] <= valid_end)
+        test_mask = (data["_datetime"] >= test_start) & (data["_datetime"] <= test_end)
+        
+        train_data = data[train_mask].drop(columns=["_datetime"]).reset_index(drop=True)
+        valid_data = data[valid_mask].drop(columns=["_datetime"]).reset_index(drop=True)
+        test_data = data[test_mask].drop(columns=["_datetime"]).reset_index(drop=True)
+    else:
+        # 使用比例格式分割
+        train_end = int(n * train_end_cfg)
+        valid_end = int(n * valid_end_cfg)
+        
+        train_data = data.iloc[:train_end].reset_index(drop=True)
+        valid_data = data.iloc[train_end:valid_end].reset_index(drop=True)
+        test_data = data.iloc[valid_end:].reset_index(drop=True)
     
     logger.info(f"Data split: train={len(train_data)}, valid={len(valid_data)}, test={len(test_data)}")
+    
+    # 🆕 數據增強：翻轉數據模擬下跌市場
+    augment_config = config.get('data_augmentation', {})
+    if augment_config.get('enable_price_flip', False):
+        logger.info("Applying price flip augmentation...")
+        flipped_train = flip_price_data(train_data.copy())
+        train_data = pd.concat([train_data, flipped_train], ignore_index=True)
+        logger.info(f"Augmented train data size: {len(train_data)}")
     
     # 執行訓練
     model = None
     training_results = {}
     
+    # 從配置文件讀取 total_timesteps，如果沒有則用命令行參數
+    config_timesteps = config.get('train', {}).get('total_timesteps', args.total_timesteps)
+    
     if args.mode == 'standard':
         model, training_results = run_standard_training(
             config, train_data, valid_data, output_dir,
             algorithm=args.algorithm,
-            total_timesteps=args.total_timesteps
+            total_timesteps=config_timesteps
         )
     
     elif args.mode == 'curriculum':
         model, training_results = run_curriculum_training(
             config, train_data, valid_data, output_dir,
             algorithm=args.algorithm,
-            total_timesteps=args.total_timesteps
+            total_timesteps=config_timesteps
         )
     
     elif args.mode == 'distributed':
@@ -619,7 +893,7 @@ def main():
         model, training_results = run_standard_training(
             config, train_data, valid_data, output_dir,
             algorithm=args.algorithm,
-            total_timesteps=args.total_timesteps
+            total_timesteps=config_timesteps
         )
         args.run_backtest = True
         args.run_explainability = True

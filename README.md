@@ -236,6 +236,42 @@ report = (
 
 ---
 
+## 📅 專案開發階段 (Development Phases)
+
+本專案的演進分為 5 個主要階段，目前處於 **Phase 4**。
+
+### Phase 1: 基礎建設與基線 (Foundation & Baseline)
+**目標**: 建立環境並證明 RL 有學習潛力。
+- **核心**: `envs/market_making_env_v2.py` (做市商環境邏輯)
+- **基準**: 隨機策略 (Random) 與 固定價差策略 (Fixed Spread)。
+- **驗證**: 確保 RL Agent 能擊敗隨機與固定策略。
+
+### Phase 2: 初步 RL 訓練 (Standard RL)
+**目標**: 讓 Agent 學會基本的做市行為（低買高賣）。
+- **算法**: SAC (Soft Actor-Critic)。
+- **設定**: `configs/env_v3.yaml`。
+- **結果**: Agent 學會了報價，但在極端行情下容易持有過多庫存。
+
+### Phase 3: 穩健性與調優 (Robustness & Tuning)
+**目標**: 提高模型在不同市場狀況下的生存率。
+- **改進**: 引入動態持倉限制 (Dynamic Position Limit) 與 更多噪聲訓練。
+- **工具**: `tune_mm_sac.py` (Optuna 超參數調優)。
+- **設定**: `configs/env_v3_robust.yaml`。
+
+### Phase 4: "核彈級" 庫存控制 (Nuclear / Stabilization) ⬅️ 目前階段
+**目標**: 強制 Agent 學會極致的庫存管理，實現穩定的正收益。
+- **策略**: 採用極端的庫存懲罰係數 (`lambda_inventory=10.0`) 與 正規化獎勵 (`reward_scale=0.001`)。
+- **腳本**: `scripts/run_stabilization.py` (長期穩定化訓練)。
+- **成果**: 首次在 Out-of-Sample (OOS) 測試中實現穩定獲利。
+
+### Phase 5: 評估與分析 (Evaluation & OOS)
+**目標**: 驗證模型在未見過數據上的表現，準備實盤。
+- **工具**: `scripts/evaluate_v3_oos.py` (樣本外測試)。
+- **分析**: `scripts/analyze_experiments.py` (實驗數據分析)。
+- **下一步**: 小額實盤測試。
+
+---
+
 ## 📝 License
 
 MIT License

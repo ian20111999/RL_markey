@@ -1,0 +1,114 @@
+# =============================================================================
+# MarketMakingEnvV2 Configuration (v3_stabilized)
+# 
+# Strategy: Stabilization Run
+# Base: v3_nuclear (Lambda=10.0)
+# Changes:
+# 1. Learning Rate: 0.00003 (10x smaller) to prevent catastrophic forgetting.
+# 2. Batch Size: 512 (Larger) for more stable gradient updates.
+# 3. Entropy Coefficient: "auto" to allow adaptive exploration.
+# 4. Goal: Gently fine-tune the aggressive "Nuclear" policy without breaking it.
+# =============================================================================
+
+env:
+  id: "MarketMakingEnvV2"
+  data_file: "data/btc_usdt_1m_2023.csv"
+  episode_length: 1440
+  initial_cash: 10000.0
+  max_inventory: 5.0
+  random_start: true
+  fee_rate: 0.0004
+  base_spread: 25.0
+
+data_augmentation:
+  enable_price_flip: true
+
+fill_model:
+  enabled: false
+
+observation:
+  include_price: true
+  include_inventory: true
+  include_time: true
+  include_volatility: true
+  include_momentum: true
+  include_volume: true
+  include_inventory_age: true
+  include_trend: false
+  trend_windows: [60, 240, 1440]
+  volatility_windows: [5, 15, 60]
+  momentum_windows: [5, 15]
+
+reward:
+  mode: "shaped"
+  reward_scale: 0.001
+  lambda_inventory: 10.0            # Keep the "Nuclear" penalty
+  lambda_turnover: 0.0
+  gamma: 0.99
+  sparse_scale: 0.01
+  terminal_bonus_weight: 0.3
+  spread_capture_bonus: 0.0
+  round_trip_bonus: 0.0
+  inventory_revert_bonus: 0.5
+
+action:
+  mode: "asymmetric"
+  allow_no_quote: false
+  max_spread_multiplier: 2.0
+  min_spread_multiplier: 0.5
+
+dynamic_position_limit:
+  enabled: true
+  volatility_window: 60
+  volatility_threshold: 0.0005
+  min_inventory_ratio: 0.2
+  max_inventory_ratio: 1.0
+
+domain_randomization:
+  enabled: false
+
+risk_sensitive:
+  enabled: false
+
+train:
+  algo: "SAC"
+  total_timesteps: 200000
+  final_timesteps: 300000
+  
+  # Stabilization Hyperparameters
+  learning_rate: 0.00003            # Reduced from 0.0003
+  batch_size: 512                   # Increased from 256
+  buffer_size: 500000
+  gamma: 0.99
+  tau: 0.005
+  train_freq: 1
+  gradient_steps: 1
+  ent_coef: "auto"                  # Changed from 0.1 to auto
+  target_entropy: "auto"
+  learning_starts: 10000
+  
+  net_arch: [256, 256]
+  n_envs: 4
+  eval_freq: 5000
+  n_eval_episodes: 10
+  
+  early_stopping:
+    enabled: true
+    patience: 25
+    min_delta: 0.05
+
+sanity_criteria:
+  min_rl_net_pnl: 0.0
+  min_rl_vs_random_gap: 0.2
+  min_rl_vs_baseline_gap: -0.1
+  max_retries: 3
+  require_positive_sharpe: false
+
+data_split:
+  train_end: 0.5
+  valid_end: 0.67
+
+run:
+  short_name: "v3_stabilized"
+  notes: "Stabilization run with low LR and auto entropy."
+  tags: ["v3", "stabilized", "nuclear"]
