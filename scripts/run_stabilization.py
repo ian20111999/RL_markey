@@ -13,8 +13,9 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from stable_baselines3 import SAC
-from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
+from stable_baselines3.common.utils import set_random_seed
 
 from envs.market_making_env_v2 import (
     MarketMakingEnvV2, RewardConfig, ObservationConfig, ActionConfig,
@@ -209,11 +210,21 @@ def main():
         train_data = pd.concat([train_data, flipped_train], ignore_index=True)
     
     # Create Envs
-    env = create_env(train_data, config)
-    eval_env = create_env(valid_data, config)
+    # Use SubprocVecEnv for parallel execution if num_cpu > 1
+    num_cpu = 4  # Adjust based on your CPU cores
     
-    vec_env = DummyVecEnv([lambda: env])
-    eval_vec_env = DummyVecEnv([lambda: eval_env])
+    def make_env(rank, seed=0):
+        def _init():
+            e = create_env(train_data, config, seed=seed + rank)
+            return e
+        return _init
+
+    if num_cpu > 1:
+        vec_env = SubprocVecEnv([make_env(i) for i in range(num_cpu)])
+    else:
+        vec_env = DummyVecEnv([make_env(0)])
+
+    eval_vec_env = DummyVecEnv([lambda: create_env(valid_data, config)])
     
     # Load Model
     logger.info(f"Loading model from {model_path}...")
@@ -306,7 +317,8 @@ def main():
         model.ent_coef = 'auto'
         model.target_entropy = config['train']['target_entropy']
         if model.target_entropy == 'auto':
-            model.target_entropy = float(-np.prod(env.action_space.shape).astype(np.float32))
+            # Use vec_env.action_space instead of env.action_space
+            model.target_entropy = float(-np.prod(vec_env.action_space.shape).astype(np.float32))
             
         # Initialize log_ent_coef
         import torch

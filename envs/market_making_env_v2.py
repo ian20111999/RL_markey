@@ -1,11 +1,11 @@
 """MarketMakingEnvV2: 改良版做市強化學習環境。
 
-改進項目：
-1. Reward: Potential-based shaping + Sparse reward 選項
-2. Observation: 擴展特徵（波動率、動量、時間編碼、庫存年齡）
-3. Action: 支援非對稱報價、不報價選項
-4. Domain Randomization: 訓練時隨機化環境參數
-5. Metrics: 完整的行為與風險指標
+改进项目：
+1. Reward: Potential-based shaping + Sparse reward 选项
+2. Observation: 扩展特征（波动率、动量、时间编码、库存年龄）
+3. Action: 支援非对称报价、不报价选项
+4. Domain Randomization: 训练时随机化环境参数
+5. Metrics: 完整的行为与风险指标
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# 導入真實成交模型
+# 导入真实成交模型
 from envs.realistic_fill_model import (
     RealisticFillModel, 
     FillModelConfig, 
@@ -32,7 +32,7 @@ from envs.realistic_fill_model import (
     REALISTIC_FILL_CONFIG,
 )
 
-# 導入常數配置
+# 导入常数配置
 from envs.constants import (
     REWARD_DEBUG_INTERVAL,
     REWARD_WARNING_THRESHOLD,
@@ -50,7 +50,7 @@ from envs.constants import (
     VAR_PERCENTILE,
 )
 
-# 導入 Numba 優化（可選）
+# 导入 Numba 优化（可选）
 try:
     from utils.numba_optimizations import (
         rolling_std_numba,
@@ -72,9 +72,9 @@ except ImportError:
 # =============================================================================
 
 class RewardMode(Enum):
-    """Reward 計算模式"""
-    DENSE = "dense"              # 每步都給 reward（傳統方式）
-    SPARSE = "sparse"            # 只在 episode 結束時給 reward
+    """Reward 计算模式"""
+    DENSE = "dense"              # 每步都给 reward（传统方式）
+    SPARSE = "sparse"            # 只在 episode 结束时给 reward
     SHAPED = "shaped"            # Potential-based reward shaping
     HYBRID = "hybrid"            # 混合模式：shaped + sparse terminal bonus
 
@@ -84,55 +84,55 @@ class RewardConfig:
     """Reward 配置"""
     mode: RewardMode = RewardMode.SHAPED
     
-    # Dense/Shaped 模式參數
-    lambda_inventory: float = 0.0005      # 庫存懲罰係數（用於 potential function）
-    lambda_turnover: float = 0.0          # 刷單懲罰
-    gamma: float = 0.99                   # 折扣因子（用於 potential shaping）
+    # Dense/Shaped 模式参数
+    lambda_inventory: float = 0.0005      # 库存惩罚系数（用于 potential function）
+    lambda_turnover: float = 0.0          # 刷单惩罚
+    gamma: float = 0.99                   # 折扣因子（用于 potential shaping）
     
-    # Sparse 模式參數
-    sparse_scale: float = 0.01            # Sparse reward 的縮放係數
+    # Sparse 模式参数
+    sparse_scale: float = 0.01            # Sparse reward 的缩放系数
     
-    # Hybrid 模式參數
-    terminal_bonus_weight: float = 0.5    # Terminal bonus 權重
+    # Hybrid 模式参数
+    terminal_bonus_weight: float = 0.5    # Terminal bonus 权重
     
-    # 🆕 做市獎勵參數（鼓勵真正的做市行為）
-    spread_capture_bonus: float = 0.0     # 每賺到 $1 spread 的獎勵
-    round_trip_bonus: float = 0.0         # 完成買賣配對的獎勵
-    inventory_revert_bonus: float = 0.0   # 庫存回歸獎勵
-    asymmetric_penalty: float = 0.0       # 不對稱報價懲罰
+    # 🆕 做市奖励参数（鼓励真正的做市行为）
+    spread_capture_bonus: float = 0.0     # 每赚到 $1 spread 的奖励
+    round_trip_bonus: float = 0.0         # 完成买卖配对的奖励
+    inventory_revert_bonus: float = 0.0   # 库存回归奖励
+    asymmetric_penalty: float = 0.0       # 不对称报价惩罚
     
-    # 🆕 v3: Reward 縮放（穩定訓練）
-    reward_scale: float = 1.0             # 獎勵縮放因子，建議 0.001 將獎勵標準化
+    # 🆕 v3: Reward 缩放（稳定训练）
+    reward_scale: float = 1.0             # 奖励缩放因子，建议 0.001 将奖励标准化
 
 
 @dataclass
 class ObservationConfig:
-    """Observation 特徵配置"""
-    include_price: bool = True            # 價格相關特徵
-    include_inventory: bool = True        # 庫存特徵
-    include_time: bool = True             # 時間特徵
-    include_volatility: bool = True       # 波動率特徵
-    include_momentum: bool = True         # 動量特徵
-    include_volume: bool = True           # 成交量特徵
-    include_inventory_age: bool = True    # 庫存年齡（持倉多久）
+    """Observation 特征配置"""
+    include_price: bool = True            # 价格相关特征
+    include_inventory: bool = True        # 库存特征
+    include_time: bool = True             # 时间特征
+    include_volatility: bool = True       # 波动率特征
+    include_momentum: bool = True         # 动量特征
+    include_volume: bool = True           # 成交量特征
+    include_inventory_age: bool = True    # 库存年龄（持仓多久）
     
-    # 🆕 趨勢特徵 - 幫助模型適應不同市場狀態
-    include_trend: bool = False           # 是否包含趨勢特徵
+    # 🆕 趋势特征 - 帮助模型适应不同市场状态
+    include_trend: bool = False           # 是否包含趋势特征
     trend_windows: List[int] = field(default_factory=lambda: DEFAULT_TREND_WINDOWS)
     
-    # 波動率計算窗口 - 使用常數
+    # 波动率计算窗口 - 使用常数
     volatility_windows: List[int] = field(default_factory=lambda: DEFAULT_VOLATILITY_WINDOWS)
-    # 動量計算窗口 - 使用常數
+    # 动量计算窗口 - 使用常数
     momentum_windows: List[int] = field(default_factory=lambda: DEFAULT_MOMENTUM_WINDOWS)
 
 
 @dataclass
 class ActionConfig:
-    """Action 空間配置"""
+    """Action 空间配置"""
     mode: str = "asymmetric"              # "symmetric" | "asymmetric" | "discrete"
-    allow_no_quote: bool = True           # 是否允許不報價
-    max_spread_multiplier: float = 3.0    # 最大價差倍數
-    min_spread_multiplier: float = 0.1    # 最小價差倍數
+    allow_no_quote: bool = True           # 是否允许不报价
+    max_spread_multiplier: float = 3.0    # 最大价差倍数
+    min_spread_multiplier: float = 0.1    # 最小价差倍数
 
 
 @dataclass
@@ -140,20 +140,20 @@ class DomainRandomizationConfig:
     """Domain Randomization 配置"""
     enabled: bool = False
     
-    # 隨機化範圍
+    # 随机化范围
     fee_rate_range: Tuple[float, float] = (0.0003, 0.0005)
     base_spread_range: Tuple[float, float] = (15.0, 35.0)
     volatility_multiplier_range: Tuple[float, float] = (0.8, 1.2)
-    fill_probability_noise: float = 0.1   # 成交機率的噪聲
+    fill_probability_noise: float = 0.1   # 成交概率的噪声
 
 
 @dataclass
 class FillModelEnvConfig:
-    """成交模型環境配置"""
+    """成交模型环境配置"""
     enabled: bool = False
     mode: str = "simple"  # "simple", "moderate", "realistic", "custom"
     
-    # 自定義配置（當 mode="custom" 時使用）
+    # 自定义配置（当 mode="custom" 时使用）
     enable_queue_position: bool = True
     enable_slippage: bool = True
     slippage_bps: float = 1.0
@@ -173,38 +173,38 @@ class FillModelEnvConfig:
 
 @dataclass
 class AdvancedObservationConfig:
-    """進階觀察配置 - 擴展特徵"""
-    # Order Flow 相關
+    """进阶观察配置 - 扩展特征"""
+    # Order Flow 相关
     include_order_flow_imbalance: bool = False
     order_flow_window: int = 20
     
-    # VWAP 相關
+    # VWAP 相关
     include_vwap_deviation: bool = False
     vwap_window: int = 60
     
-    # 多時間框架動量
+    # 多时间框架动量
     include_multi_timeframe_momentum: bool = False
     mtf_windows: List[int] = field(default_factory=lambda: [15, 60, 240])
     
-    # 波動率預測（使用 EWMA）
+    # 波动率预测（使用 EWMA）
     include_volatility_forecast: bool = False
     ewma_span: int = 20
     
-    # 價格微結構
+    # 价格微结构
     include_microstructure: bool = False  # High-Low range, True range
 
 
 @dataclass
 class PerformanceConfig:
-    """性能優化配置"""
-    use_numba: bool = True                              # 使用 Numba JIT 加速（需要安裝 numba）
-    precompute_features: bool = True                    # 預計算特徵（建議保持 True）
-    feature_cache_size: int = DEFAULT_METRICS_BUFFER_SIZE  # 特徵緩存大小（MetricsTracker）
+    """性能优化配置"""
+    use_numba: bool = True                              # 使用 Numba JIT 加速（需要安装 numba）
+    precompute_features: bool = True                    # 预计算特征（建议保持 True）
+    feature_cache_size: int = DEFAULT_METRICS_BUFFER_SIZE  # 特征缓存大小（MetricsTracker）
 
 
 @dataclass
 class FillResult:
-    """成交結果"""
+    """成交结果"""
     filled: bool
     price: float
     size: float = 1.0
@@ -217,66 +217,66 @@ class FillResult:
 # =============================================================================
 
 class MetricsTracker:
-    """追蹤完整的行為與風險指標
+    """追踪完整的行为与风险指标
     
-    🔧 記憶體優化: 使用固定大小緩衝區，避免無限增長
+    🔧 记忆体优化: 使用固定大小缓冲区，避免无限增长
     """
     
     def __init__(self, max_buffer_size: int = 10000):
         """
         Args:
-            max_buffer_size: 緩衝區最大大小（默認 10000 步）
-                           超過後使用滾動緩衝區（保留最近的資料）
+            max_buffer_size: 缓冲区最大大小（默认 10000 步）
+                           超过后使用滚动缓冲区（保留最近的资料）
         """
         self.max_buffer_size = max_buffer_size
         self.reset()
     
     def reset(self):
-        # 結果指標 - 使用固定大小緩衝區
+        # 结果指标 - 使用固定大小缓冲区
         self.portfolio_values: List[float] = []
         self.returns: List[float] = []
         
-        # 行為指標 - 使用固定大小緩衝區
+        # 行为指标 - 使用固定大小缓冲区
         self.spreads: List[float] = []
         self.inventory_history: List[float] = []
         
-        # 計數器（不佔太多記憶體）
+        # 计数器（不占太多记忆体）
         self.bid_fills: int = 0
         self.ask_fills: int = 0
         self.quote_count: int = 0
         self.no_quote_count: int = 0
         
-        # 持有時間（只在平倉時記錄，數量有限）
+        # 持有时间（只在平仓时记录，数量有限）
         self.holding_times: List[int] = []
         
-        # 風險指標
+        # 风险指标
         self.max_inventory: float = 0.0
         self.time_at_max_inventory: int = 0
         
-        # Drawdown - 使用固定大小緩衝區
+        # Drawdown - 使用固定大小缓冲区
         self.drawdowns: List[float] = []
         
-        # 逆選擇追蹤
+        # 逆选择追踪
         self.adverse_selection_events: int = 0
-        self.post_fill_returns: List[float] = []  # 固定大小緩衝區
+        self.post_fill_returns: List[float] = []  # 固定大小缓冲区
         
-        # 庫存管理
+        # 库存管理
         self._inventory_entry_step: Dict[int, int] = {}
         self._position_counter: int = 0
         self._current_peak: float = 0.0
         
-        # 記憶體使用統計
+        # 记忆体使用统计
         self._buffer_overflow_count: int = 0
     
     def update(self, step: int, portfolio_value: float, inventory: float, 
                spread: float, bid_filled: bool, ask_filled: bool,
                quoted: bool, max_inventory: float, mid_price: float,
                prev_mid_price: float):
-        """每步更新指標
+        """每步更新指标
         
-        🔧 記憶體優化: 使用滾動緩衝區，避免記憶體無限增長
+        🔧 记忆体优化: 使用滚动缓冲区，避免记忆体无限增长
         """
-        # 使用固定大小緩衝區（滾動更新）
+        # 使用固定大小缓冲区（滚动更新）
         self._append_to_buffer(self.portfolio_values, portfolio_value)
         self._append_to_buffer(self.inventory_history, inventory)
         self._append_to_buffer(self.spreads, spread)
@@ -294,11 +294,11 @@ class MetricsTracker:
             self.bid_fills += 1
             self._position_counter += 1
             self._inventory_entry_step[self._position_counter] = step
-            # 追蹤逆選擇
+            # 追踪逆选择
             if prev_mid_price > 0:
                 price_change = (mid_price - prev_mid_price) / prev_mid_price
-                self.post_fill_returns.append(-price_change)  # 買入後價格下跌是不利的
-                if price_change < -0.0001:  # 價格下跌超過 0.01%
+                self.post_fill_returns.append(-price_change)  # 买入后价格下跌是不利的
+                if price_change < -0.0001:  # 价格下跌超过 0.01%
                     self.adverse_selection_events += 1
         
         if ask_filled:
@@ -307,18 +307,18 @@ class MetricsTracker:
             self._inventory_entry_step[self._position_counter] = step
             if prev_mid_price > 0:
                 price_change = (mid_price - prev_mid_price) / prev_mid_price
-                self.post_fill_returns.append(price_change)  # 賣出後價格上漲是不利的
+                self.post_fill_returns.append(price_change)  # 卖出后价格上涨是不利的
                 if price_change > 0.0001:
                     self.adverse_selection_events += 1
         
-        # 更新最大庫存
+        # 更新最大库存
         abs_inv = abs(inventory)
         if abs_inv > self.max_inventory:
             self.max_inventory = abs_inv
         if abs_inv >= max_inventory * 0.9:  # 接近上限
             self.time_at_max_inventory += 1
         
-        # 計算 Drawdown - 使用固定大小緩衝區
+        # 计算 Drawdown - 使用固定大小缓冲区
         if portfolio_value > self._current_peak:
             self._current_peak = portfolio_value
         if self._current_peak > 0:
@@ -326,17 +326,17 @@ class MetricsTracker:
             self._append_to_buffer(self.drawdowns, dd)
     
     def _append_to_buffer(self, buffer: List[float], value: float):
-        """添加值到固定大小緩衝區
+        """添加值到固定大小缓冲区
         
-        當緩衝區達到最大大小時，移除最舊的資料（FIFO）
+        当缓冲区达到最大大小时，移除最旧的资料（FIFO）
         """
         buffer.append(value)
         if len(buffer) > self.max_buffer_size:
-            buffer.pop(0)  # 移除最舊的資料
+            buffer.pop(0)  # 移除最旧的资料
             self._buffer_overflow_count += 1
     
     def get_summary(self) -> Dict[str, float]:
-        """取得指標摘要"""
+        """取得指标摘要"""
         pv = np.array(self.portfolio_values) if self.portfolio_values else np.array([0.0])
         returns = np.array(self.returns) if self.returns else np.array([0.0])
         drawdowns = np.array(self.drawdowns) if self.drawdowns else np.array([0.0])
@@ -344,7 +344,7 @@ class MetricsTracker:
         total_fills = self.bid_fills + self.ask_fills
         total_quotes = self.quote_count + self.no_quote_count
         
-        # 計算 VaR 和 ES
+        # 计算 VaR 和 ES
         if len(returns) > 10:
             var_95 = np.percentile(returns, 5)  # 5th percentile = 95% VaR
             es_95 = returns[returns <= var_95].mean() if len(returns[returns <= var_95]) > 0 else var_95
@@ -353,13 +353,13 @@ class MetricsTracker:
             es_95 = 0.0
         
         return {
-            # 結果指標
+            # 结果指标
             "net_pnl": pv[-1] - pv[0] if len(pv) > 1 else 0.0,
             "sharpe": self._compute_sharpe(returns),
             "max_drawdown": float(np.max(drawdowns)) if len(drawdowns) > 0 else 0.0,
             "calmar_ratio": self._compute_calmar(pv, drawdowns),
             
-            # 行為指標
+            # 行为指标
             "avg_spread": float(np.mean(self.spreads)) if self.spreads else 0.0,
             "fill_rate": total_fills / max(total_quotes, 1),
             "bid_fill_rate": self.bid_fills / max(self.quote_count, 1),
@@ -367,13 +367,13 @@ class MetricsTracker:
             "quote_rate": self.quote_count / max(total_quotes, 1),
             "inventory_turnover": total_fills / max(len(self.inventory_history), 1),
             
-            # 風險指標
+            # 风险指标
             "var_95": var_95,
             "expected_shortfall_95": es_95,
             "max_inventory_reached": self.max_inventory,
             "time_at_max_inventory_pct": self.time_at_max_inventory / max(len(self.inventory_history), 1),
             
-            # 逆選擇指標
+            # 逆选择指标
             "adverse_selection_rate": self.adverse_selection_events / max(total_fills, 1),
             "avg_post_fill_return": float(np.mean(self.post_fill_returns)) if self.post_fill_returns else 0.0,
         }
@@ -385,7 +385,7 @@ class MetricsTracker:
         std = np.std(excess)
         if std < 1e-8:
             return 0.0
-        # 年化（假設每步 1 分鐘）
+        # 年化（假设每步 1 分钟）
         annual_factor = np.sqrt(365 * 24 * 60)
         return float(np.mean(excess) / std * annual_factor)
     
@@ -404,7 +404,7 @@ class MetricsTracker:
 # =============================================================================
 
 class MarketMakingEnvV2(gym.Env):
-    """改良版做市環境"""
+    """改良版做市环境"""
     
     metadata = {"render_modes": ["human"]}
     
@@ -425,23 +425,23 @@ class MarketMakingEnvV2(gym.Env):
         obs_config: Optional[ObservationConfig] = None,
         action_config: Optional[ActionConfig] = None,
         domain_rand_config: Optional[DomainRandomizationConfig] = None,
-        # 新增：真實成交模型配置
+        # 新增：真实成交模型配置
         fill_model_config: Optional[FillModelEnvConfig] = None,
-        # 新增：進階觀察配置
+        # 新增：进阶观察配置
         advanced_obs_config: Optional[AdvancedObservationConfig] = None,
-        # 新增：性能優化配置
+        # 新增：性能优化配置
         performance_config: Optional[PerformanceConfig] = None,
     ):
         super().__init__()
         
-        # 驗證輸入
+        # 验证输入
         if csv_path is None and df is None:
             raise ValueError("Must provide either csv_path or df")
         
         if csv_path is not None and df is not None:
             raise ValueError("Cannot provide both csv_path and df. Choose one.")
         
-        # 驗證數值參數
+        # 验证数值参数
         if max_inventory <= 0:
             raise ValueError(f"max_inventory must be positive, got {max_inventory}")
         
@@ -457,9 +457,9 @@ class MarketMakingEnvV2(gym.Env):
         if initial_cash <= 0:
             raise ValueError(f"initial_cash must be positive, got {initial_cash}")
         
-        # 基本參數
+        # 基本参数
         self.csv_path = csv_path
-        self._input_df = df  # 直接傳入的 DataFrame
+        self._input_df = df  # 直接传入的 DataFrame
         self.episode_length = episode_length
         self.base_fee_rate = fee_rate
         self.base_spread = base_spread
@@ -478,46 +478,46 @@ class MarketMakingEnvV2(gym.Env):
         self.adv_obs_cfg = advanced_obs_config or AdvancedObservationConfig()
         self.perf_cfg = performance_config or PerformanceConfig()
         
-        # 檢查 Numba 可用性
+        # 检查 Numba 可用性
         if self.perf_cfg.use_numba and not NUMBA_AVAILABLE:
             logger.warning("Numba requested but not available. Falling back to NumPy/Pandas.")
             self.perf_cfg.use_numba = False
         
-        # 初始化真實成交模型
+        # 初始化真实成交模型
         self._init_fill_model()
         
-        # 設定隨機種子
+        # 设置随机种子
         if seed is not None:
             np.random.seed(seed)
             random.seed(seed)
         
-        # 載入資料
+        # 加载数据
         self._load_data()
         
-        # 驗證配置
+        # 验证配置
         self._validate_configuration()
         
-        # 預計算特徵
+        # 预计算特征
         self._precompute_features()
         
-        # 預計算進階特徵
+        # 预计算进阶特征
         self._precompute_advanced_features()
         
-        # 定義空間
+        # 定义空间
         self._setup_spaces()
         
-        # 初始化狀態變數
+        # 初始化状态变量
         self._init_state()
         
-        # 指標追蹤器 - 使用配置的緩衝區大小
+        # 指标追踪器 - 使用配置的缓冲区大小
         self.metrics = MetricsTracker(max_buffer_size=self.perf_cfg.feature_cache_size)
     
     def _validate_configuration(self):
-        """驗證配置的合理性
+        """验证配置的合理性
         
-        檢查配置參數是否在合理範圍內，並發出警告
+        检查配置参数是否在合理范围内，并发出警告
         """
-        # 檢查 reward_scale
+        # 检查 reward_scale
         if self.reward_cfg.reward_scale > 1.0:
             logger.warning(f"reward_scale={self.reward_cfg.reward_scale} > 1.0")
             logger.warning(f"This may cause large rewards. Consider using 0.001-0.01")
@@ -526,12 +526,12 @@ class MarketMakingEnvV2(gym.Env):
             logger.warning(f"reward_scale={self.reward_cfg.reward_scale} < 1e-5")
             logger.warning(f"Rewards may be too small for learning")
         
-        # 檢查 lambda_inventory
+        # 检查 lambda_inventory
         if self.reward_cfg.lambda_inventory > 100:
             logger.warning(f"lambda_inventory={self.reward_cfg.lambda_inventory} is very large")
             logger.warning(f"This may cause excessive inventory penalty")
         
-        # 檢查窗口大小
+        # 检查窗口大小
         max_window = max(
             max(self.obs_cfg.volatility_windows) if self.obs_cfg.volatility_windows else 0,
             max(self.obs_cfg.momentum_windows) if self.obs_cfg.momentum_windows else 0,
@@ -542,9 +542,9 @@ class MarketMakingEnvV2(gym.Env):
             logger.warning(f"Features may not have enough data at episode start")
     
     def _init_fill_model(self):
-        """初始化真實成交模型
+        """初始化真实成交模型
         
-        🔧 加入錯誤處理，確保配置正確
+        🔧 加入错误处理，确保配置正确
         """
         if not self.fill_model_cfg.enabled:
             self.fill_model = None
@@ -590,12 +590,12 @@ class MarketMakingEnvV2(gym.Env):
             self.fill_model_cfg.enabled = False
     
     def _load_data(self):
-        """載入並預處理資料
+        """载入并预处理资料
         
-        🔧 加入錯誤處理和資料驗證
+        🔧 加入错误处理和资料验证
         """
         try:
-            # 支援直接傳入 DataFrame 或從 CSV 載入
+            # 支援直接传入 DataFrame 或从 CSV 加载
             if self._input_df is not None:
                 self.df = self._input_df.copy()
             else:
@@ -607,11 +607,11 @@ class MarketMakingEnvV2(gym.Env):
             self.df.sort_values("timestamp", inplace=True)
             self.df.reset_index(drop=True, inplace=True)
             
-            # 驗證必要欄位
+            # 验证必要栏位
             if "close" not in self.df.columns:
                 raise ValueError("CSV must contain 'close' column")
             
-            # 檢查資料量
+            # 检查资料量
             if len(self.df) < self.episode_length:
                 raise ValueError(
                     f"Data length ({len(self.df)}) < episode_length ({self.episode_length}). "
@@ -629,14 +629,14 @@ class MarketMakingEnvV2(gym.Env):
         if "close" not in self.df.columns:
             raise ValueError("CSV 缺少 close 欄位")
         
-        # 轉為 numpy 加速
+        # 转为 numpy 加速
         self.closes = self.df["close"].to_numpy(dtype=np.float64)
         self.highs = self.df.get("high", self.df["close"]).to_numpy(dtype=np.float64)
         self.lows = self.df.get("low", self.df["close"]).to_numpy(dtype=np.float64)
         self.volumes = self.df.get("volume", pd.Series(np.zeros(len(self.df)))).to_numpy(dtype=np.float64)
         self.opens = self.df.get("open", self.df["close"]).to_numpy(dtype=np.float64)
         
-        # 時間戳
+        # 时间戳
         if "datetime" in self.df.columns:
             self.timestamps = pd.to_datetime(self.df["datetime"])
         elif "timestamp" in self.df.columns:
@@ -647,18 +647,18 @@ class MarketMakingEnvV2(gym.Env):
         self.data_len = len(self.closes)
     
     def _precompute_features(self):
-        """預計算技術特徵（加速訓練）
+        """预计算技术特征（加速训练）
         
-        🔧 修正: 使用因果計算（Causal Computation）避免資料洩漏
-        所有特徵計算只使用「當前時刻及之前」的資料
+        🔧 修正: 使用因果计算（Causal Computation）避免资料泄漏
+        所有特征计算只使用「当前时刻及之前」的资料
         
-        ⚡ 性能優化: 使用 Numba JIT 加速（如果可用）
+        ⚡ 性能优化: 使用 Numba JIT 加速（如果可用）
         """
         # 收益率
         self.returns = np.zeros(self.data_len)
         self.returns[1:] = (self.closes[1:] - self.closes[:-1]) / self.closes[:-1]
         
-        # 波動率（滾動標準差）- 使用 Numba 或 Pandas
+        # 波动率（滚动标准差）- 使用 Numba 或 Pandas
         self.volatilities = {}
         for window in self.obs_cfg.volatility_windows:
             if self.perf_cfg.use_numba:
@@ -672,13 +672,13 @@ class MarketMakingEnvV2(gym.Env):
                     min_periods=1
                 ).std().shift(1).fillna(0).values * np.sqrt(window)
                 
-                # 第一個值特殊處理（沒有歷史）
+                # 第一个值特殊处理（没有历史）
                 if len(vol) > 0:
                     vol[0] = 0.0
             
             self.volatilities[window] = vol
         
-        # 動量 - 使用 Numba 或 Pandas
+        # 动量 - 使用 Numba 或 Pandas
         self.momentums = {}
         for window in self.obs_cfg.momentum_windows:
             if self.perf_cfg.use_numba:
@@ -693,7 +693,7 @@ class MarketMakingEnvV2(gym.Env):
             
             self.momentums[window] = mom
         
-        # Volume 特徵 - 使用 Numba 或 Pandas
+        # Volume 特征 - 使用 Numba 或 Pandas
         if self.perf_cfg.use_numba:
             self.volume_ma = rolling_mean_numba(self.volumes, 20)
         else:
@@ -706,7 +706,7 @@ class MarketMakingEnvV2(gym.Env):
             if len(self.volume_ma) > 0:
                 self.volume_ma[0] = self.volumes[0] if len(self.volumes) > 0 else 0.0
         
-        # 趨勢特徵
+        # 趋势特征
         if self.obs_cfg.include_trend:
             self.trend_sma = {}
             self.trend_direction = {}
@@ -724,17 +724,17 @@ class MarketMakingEnvV2(gym.Env):
                 
                 self.trend_sma[window] = sma
                 
-                # 趨勢方向: (當前價格 - 歷史SMA) / 歷史SMA
+                # 趋势方向: (当前价格 - 历史SMA) / 历史SMA
                 direction = np.where(sma > 0, (self.closes - sma) / sma, 0)
-                direction[:window] = 0.0  # 前 window 步設為 0
+                direction[:window] = 0.0  # 前 window 步设为 0
                 
                 self.trend_direction[window] = direction
     
     def _precompute_advanced_features(self):
-        """預計算進階特徵
+        """预计算进阶特征
         
-        🔧 修正: 因果計算，避免使用未來資料
-        ⚡ 性能優化: 使用 Numba JIT 加速（如果可用）
+        🔧 修正: 因果计算，避免使用未来资料
+        ⚡ 性能优化: 使用 Numba JIT 加速（如果可用）
         """
         # Order Flow Imbalance - 使用 Numba 或原生 Python
         if self.adv_obs_cfg.include_order_flow_imbalance:
@@ -748,14 +748,14 @@ class MarketMakingEnvV2(gym.Env):
                 # Fallback to native Python
                 self.order_flow_imbalance = np.zeros(self.data_len)
                 for i in range(window, self.data_len):
-                    # 只使用 [i-window, i) 的資料（不包含 i）
+                    # 只使用 [i-window, i) 的资料（不包含 i）
                     buy_vol = np.sum(self.volumes[i-window:i] * (self.returns[i-window:i] > 0))
                     sell_vol = np.sum(self.volumes[i-window:i] * (self.returns[i-window:i] < 0))
                     total_vol = buy_vol + sell_vol
                     if total_vol > 0:
                         self.order_flow_imbalance[i] = (buy_vol - sell_vol) / total_vol
         
-        # VWAP 偏離 - 使用 Numba 或原生 Python
+        # VWAP 偏离 - 使用 Numba 或原生 Python
         if self.adv_obs_cfg.include_vwap_deviation:
             window = self.adv_obs_cfg.vwap_window
             if self.perf_cfg.use_numba:
@@ -767,16 +767,16 @@ class MarketMakingEnvV2(gym.Env):
                 # Fallback to native Python
                 self.vwap_deviation = np.zeros(self.data_len)
                 for i in range(window, self.data_len):
-                    # 只使用歷史窗口 [i-window, i)
+                    # 只使用历史窗口 [i-window, i)
                     vol_window = self.volumes[i-window:i]
                     price_window = self.closes[i-window:i]
                     total_vol = np.sum(vol_window)
                     if total_vol > 0:
                         vwap = np.sum(vol_window * price_window) / total_vol
-                        # 當前價格與歷史 VWAP 的偏離
+                        # 当前价格与历史 VWAP 的偏离
                         self.vwap_deviation[i] = (self.closes[i] - vwap) / vwap if vwap > 0 else 0
         
-        # 多時間框架動量 - 使用 Numba 或原生 Python
+        # 多时间框架动量 - 使用 Numba 或原生 Python
         if self.adv_obs_cfg.include_multi_timeframe_momentum:
             self.mtf_momentums = {}
             for window in self.adv_obs_cfg.mtf_windows:
@@ -787,42 +787,42 @@ class MarketMakingEnvV2(gym.Env):
                     # Fallback to native Python
                     mom = np.zeros(self.data_len)
                     for i in range(window, self.data_len):
-                        # 當前價格 vs window 步之前的價格
+                        # 当前价格 vs window 步之前的价格
                         if self.closes[i-window] > 0:
                             mom[i] = (self.closes[i] - self.closes[i-window]) / self.closes[i-window]
                     self.mtf_momentums[window] = mom
         
-        # 波動率預測 (EWMA) - 已經是因果的（每步只依賴歷史）
+        # 波动率预测 (EWMA) - 已经是因果的（每步只依赖历史）
         if self.adv_obs_cfg.include_volatility_forecast:
             span = self.adv_obs_cfg.ewma_span
             alpha = 2 / (span + 1)
             self.ewma_volatility = np.zeros(self.data_len)
             sq_returns = self.returns ** 2
             for i in range(1, self.data_len):
-                # 使用上一步的 EWMA 和當前的平方收益率
+                # 使用上一步的 EWMA 和当前的平方收益率
                 self.ewma_volatility[i] = alpha * sq_returns[i] + (1 - alpha) * self.ewma_volatility[i-1]
             self.ewma_volatility = np.sqrt(self.ewma_volatility)
         
-        # 價格微結構 - 當前 K 線的 High-Low，這是當前資訊，可接受
+        # 价格微结构 - 当前 K 线的 High-Low，这是当前资讯，可接受
         if self.adv_obs_cfg.include_microstructure:
-            # High-Low Range (正規化) - 使用當前 K 線
+            # High-Low Range (正规化) - 使用当前 K 线
             self.hl_range = np.zeros(self.data_len)
             for i in range(self.data_len):
                 if self.closes[i] > 0:
                     self.hl_range[i] = (self.highs[i] - self.lows[i]) / self.closes[i]
             
-            # True Range - 需要前一根 K 線的收盤價（因果）
+            # True Range - 需要前一根 K 线的收盘价（因果）
             self.true_range = np.zeros(self.data_len)
             for i in range(1, self.data_len):
                 tr1 = self.highs[i] - self.lows[i]
-                tr2 = abs(self.highs[i] - self.closes[i-1])  # 使用前一根收盤
-                tr3 = abs(self.lows[i] - self.closes[i-1])   # 使用前一根收盤
+                tr2 = abs(self.highs[i] - self.closes[i-1])  # 使用前一根收盘
+                tr3 = abs(self.lows[i] - self.closes[i-1])   # 使用前一根收盘
                 if self.closes[i-1] > 0:
                     self.true_range[i] = max(tr1, tr2, tr3) / self.closes[i-1]
     
     def _setup_spaces(self):
-        """設定 observation 和 action 空間"""
-        # 計算 observation 維度
+        """设置 observation 和 action 空间"""
+        # 计算 observation 维度
         obs_dim = 0
         if self.obs_cfg.include_price:
             obs_dim += 1  # normalized mid price
@@ -839,11 +839,11 @@ class MarketMakingEnvV2(gym.Env):
         if self.obs_cfg.include_inventory_age:
             obs_dim += 1  # normalized inventory age
         
-        # 🆕 趨勢特徵維度
+        # 🆕 趋势特征维度
         if self.obs_cfg.include_trend:
             obs_dim += len(self.obs_cfg.trend_windows)
         
-        # 進階特徵維度
+        # 进阶特征维度
         if self.adv_obs_cfg.include_order_flow_imbalance:
             obs_dim += 1
         if self.adv_obs_cfg.include_vwap_deviation:
@@ -860,7 +860,7 @@ class MarketMakingEnvV2(gym.Env):
             low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32
         )
         
-        # Action 空間
+        # Action 空间
         if self.action_cfg.mode == "symmetric":
             # [spread_action, skew_action]
             self.action_space = gym.spaces.Box(
@@ -873,11 +873,11 @@ class MarketMakingEnvV2(gym.Env):
                 low=-1.0, high=1.0, shape=(3,), dtype=np.float32
             )
         else:  # discrete
-            # 離散動作空間
+            # 离散动作空間
             self.action_space = gym.spaces.Discrete(7)
     
     def _init_state(self):
-        """初始化狀態變數"""
+        """初始化状态变量"""
         self.current_step = 0
         self.t = 0
         self.inventory = 0.0
@@ -887,24 +887,24 @@ class MarketMakingEnvV2(gym.Env):
         self.mid = 0.0
         self.prev_mid = 0.0
         
-        # 庫存年齡追蹤
-        self.inventory_age = 0  # 當前倉位持有多久
+        # 库存年龄追踪
+        self.inventory_age = 0  # 当前仓位持有多久
         self.last_inventory = 0.0
         
         # Reward shaping 的 potential
         self.last_potential = 0.0
         
-        # 累積統計
+        # 累积统计
         self.cum_gross_pnl = 0.0
         self.cum_fees = 0.0
         
-        # Domain Randomization 的實際參數
+        # Domain Randomization 的实际参数
         self.effective_fee_rate = self.base_fee_rate
         self.effective_base_spread = self.base_spread
         self.volatility_multiplier = 1.0
     
     def _apply_domain_randomization(self):
-        """應用 Domain Randomization"""
+        """应用 Domain Randomization"""
         if not self.dr_cfg.enabled:
             self.effective_fee_rate = self.base_fee_rate
             self.effective_base_spread = self.base_spread
@@ -925,13 +925,13 @@ class MarketMakingEnvV2(gym.Env):
         # Domain Randomization
         self._apply_domain_randomization()
         
-        # 選擇起始位置
+        # 选择起始位置
         max_start = self.data_len - self.episode_length - 1
         if max_start <= 0:
-            raise ValueError("資料不足以支援 episode_length")
+            raise ValueError("资料不足以支援 episode_length")
         
         if self.random_start:
-            # 確保有足夠的歷史資料計算特徵
+            # 确保有足够的历史资料计算特征
             min_start = max(self.obs_cfg.volatility_windows) if self.obs_cfg.volatility_windows else 60
             self.current_step = random.randint(min_start, max_start)
         else:
@@ -954,10 +954,10 @@ class MarketMakingEnvV2(gym.Env):
         self.cum_gross_pnl = 0.0
         self.cum_fees = 0.0
         
-        # 重置指標
+        # 重置指标
         self.metrics.reset()
         
-        # 重置真實成交模型
+        # 重置真实成交模型
         if self.fill_model is not None:
             self.fill_model.reset()
         
@@ -970,7 +970,7 @@ class MarketMakingEnvV2(gym.Env):
         return obs, info
     
     def _get_obs(self) -> np.ndarray:
-        """建構 observation 向量"""
+        """建构 observation 向量"""
         obs = []
         idx = self.current_step
         
@@ -984,7 +984,7 @@ class MarketMakingEnvV2(gym.Env):
         
         if self.obs_cfg.include_time:
             time_frac = self.t / self.episode_length
-            # 時間的週期性編碼（假設資料是分鐘級）
+            # 时间的周期性编码（假设资料是分钟级）
             minutes_in_day = 24 * 60
             time_of_day = (idx % minutes_in_day) / minutes_in_day
             obs.extend([
@@ -996,8 +996,8 @@ class MarketMakingEnvV2(gym.Env):
         if self.obs_cfg.include_volatility:
             for window in self.obs_cfg.volatility_windows:
                 vol = self.volatilities[window][idx] * self.volatility_multiplier
-                # 標準化波動率
-                obs.append(np.clip(vol * 100, -5, 5))  # 轉為百分比並裁剪
+                # 标准化波动率
+                obs.append(np.clip(vol * 100, -5, 5))  # 转为百分比并裁剪
         
         if self.obs_cfg.include_momentum:
             for window in self.obs_cfg.momentum_windows:
@@ -1010,21 +1010,21 @@ class MarketMakingEnvV2(gym.Env):
             obs.extend([vol_log, np.clip(vol_ratio, -3, 3)])
         
         if self.obs_cfg.include_inventory_age:
-            # 標準化庫存年齡（以 episode 長度為基準）
+            # 标准化库存年龄（以 episode 长度为基准）
             age_norm = min(self.inventory_age / 100.0, 1.0)
             obs.append(age_norm)
         
-        # 🆕 趨勢特徵 - 幫助模型適應不同市場狀態
+        # 🆕 趋势特征 - 帮助模型适应不同市场状态
         if self.obs_cfg.include_trend:
             for window in self.obs_cfg.trend_windows:
                 if hasattr(self, 'trend_direction') and window in self.trend_direction:
                     trend = self.trend_direction[window][idx]
                 else:
                     trend = 0.0
-                # 趨勢方向: 正值=上漲, 負值=下跌, 0=盤整
+                # 趋势方向: 正值=上涨, 负值=下跌, 0=盘整
                 obs.append(np.clip(trend * 100, -10, 10))
         
-        # ===== 進階特徵 =====
+        # ===== 进阶特征 =====
         if self.adv_obs_cfg.include_order_flow_imbalance:
             ofi = self.order_flow_imbalance[idx] if hasattr(self, 'order_flow_imbalance') else 0.0
             obs.append(np.clip(ofi, -1, 1))
@@ -1053,27 +1053,27 @@ class MarketMakingEnvV2(gym.Env):
         return np.array(obs, dtype=np.float32)
     
     def _compute_potential(self) -> float:
-        """計算 Potential Function（用於 reward shaping）
+        """计算 Potential Function（用于 reward shaping）
         
-        改進: 使用非線性懲罰，接近庫存限制時急劇增加
+        改进: 使用非线性惩罚，接近库存限制时急剧增加
         """
         inv_ratio = abs(self.inventory) / self.max_inventory
         
-        # 基礎二次懲罰 + 四次項（接近限制時急劇增加）
+        # 基础二次惩罚 + 四次项（接近限制时急剧增加）
         base_penalty = self.inventory ** 2
         limit_penalty = 10.0 * (inv_ratio ** 4) * self.max_inventory ** 2
         
         return -self.reward_cfg.lambda_inventory * (base_penalty + limit_penalty)
     
     def _parse_action(self, action: np.ndarray) -> Tuple[float, float, bool]:
-        """解析 action，回傳 (bid_spread, ask_spread, should_quote)"""
+        """解析 action，回传 (bid_spread, ask_spread, should_quote)"""
         if self.action_cfg.mode == "symmetric":
             a_spread, a_skew = action
             base = self.effective_base_spread
             spread = base * (1.0 + a_spread * (self.action_cfg.max_spread_multiplier - 1))
             spread = max(spread, base * self.action_cfg.min_spread_multiplier)
             
-            skew = a_skew * 0.5  # skew 範圍 [-0.5, 0.5]
+            skew = a_skew * 0.5  # skew 范围 [-0.5, 0.5]
             bid_spread = spread * (1.0 - skew)
             ask_spread = spread * (1.0 + skew)
             should_quote = True
@@ -1082,7 +1082,7 @@ class MarketMakingEnvV2(gym.Env):
             a_bid, a_ask, a_quote = action
             base = self.effective_base_spread
             
-            # 各自獨立的價差控制
+            # 各自独立的价差控制
             bid_spread = base * (self.action_cfg.min_spread_multiplier + 
                                  (a_bid + 1) / 2 * (self.action_cfg.max_spread_multiplier - self.action_cfg.min_spread_multiplier))
             ask_spread = base * (self.action_cfg.min_spread_multiplier + 
@@ -1091,7 +1091,7 @@ class MarketMakingEnvV2(gym.Env):
             should_quote = a_quote >= 0 or not self.action_cfg.allow_no_quote
             
         else:  # discrete
-            # 離散動作空間
+            # 离散动作空間
             discrete_actions = {
                 0: (1.0, 1.0, True),    # neutral
                 1: (0.5, 0.5, True),    # aggressive (tight spread)
@@ -1109,11 +1109,11 @@ class MarketMakingEnvV2(gym.Env):
         return bid_spread, ask_spread, should_quote
     
     def _simulate_fill(self, side: str, price: float, mid: float, extreme: float) -> FillResult:
-        """模擬成交 - 支援真實成交模型"""
-        # 如果啟用真實成交模型
+        """模拟成交 - 支援真实成交模型"""
+        # 如果启用真实成交模型
         if self.fill_model is not None:
             idx = self.current_step
-            # 建構市場數據
+            # 建构市场数据
             market_data = FillMarketData(
                 mid_price=mid,
                 bid_price=mid - self.effective_base_spread / 2,
@@ -1132,7 +1132,7 @@ class MarketMakingEnvV2(gym.Env):
                 market_data=market_data,
             )
             
-            # 掛單超出 K 線範圍，降低成交機率（額外檢查）
+            # 挂单超出 K 線範圍，降低成交機率（额外检查）
             if side == "bid" and price < extreme:
                 if not (np.random.rand() < 0.1):  # 90% 機率不成交
                     return FillResult(filled=False, price=price)
@@ -1147,18 +1147,18 @@ class MarketMakingEnvV2(gym.Env):
                 is_adverse_selection=result.is_adverse_selection,
             )
         
-        # 原始簡化模型
+        # 原始简化模型
         depth = abs(mid - price)
         k = 1.0 / max(self.effective_base_spread, 1e-6)
         p_fill = math.exp(-k * depth)
         
-        # Domain Randomization: 加入噪聲
+        # Domain Randomization: 加入噪声
         if self.dr_cfg.enabled:
             noise = np.random.uniform(-self.dr_cfg.fill_probability_noise, 
                                        self.dr_cfg.fill_probability_noise)
             p_fill = np.clip(p_fill + noise, 0, 1)
         
-        # 掛單超出 K 線範圍，降低成交機率
+        # 挂单超出 K 線範圍，降低成交機率
         if side == "bid" and price < extreme:
             p_fill *= 0.1
         if side == "ask" and price > extreme:
@@ -1171,11 +1171,11 @@ class MarketMakingEnvV2(gym.Env):
         self.t += 1
         self.prev_mid = self.mid
         
-        # 解析動作
+        # 解析动作
         action = np.clip(action, -1.0, 1.0) if isinstance(action, np.ndarray) else action
         bid_spread, ask_spread, should_quote = self._parse_action(action)
         
-        # 取得市場資料
+        # 取得市场资料
         mid = float(self.closes[self.current_step])
         high = float(self.highs[self.current_step])
         low = float(self.lows[self.current_step])
@@ -1184,7 +1184,7 @@ class MarketMakingEnvV2(gym.Env):
         bid = mid - bid_spread
         ask = mid + ask_spread
         
-        # 執行交易
+        # 执行交易
         bid_filled = False
         ask_filled = False
         fee_t = 0.0
@@ -1212,7 +1212,7 @@ class MarketMakingEnvV2(gym.Env):
                 trades_count += 1
                 ask_filled = True
         
-        # 更新庫存年齡
+        # 更新库存年龄
         if self.inventory != 0:
             if self.last_inventory == 0:
                 self.inventory_age = 1
@@ -1224,12 +1224,12 @@ class MarketMakingEnvV2(gym.Env):
             self.inventory_age = 0
         self.last_inventory = self.inventory
         
-        # 更新步數和價格
+        # 更新步数和价格
         self.current_step += 1
         terminated = self.current_step >= self.data_len - 1 or self.t >= self.episode_length
         self.mid = float(self.closes[self.current_step])
         
-        # 計算 Portfolio Value
+        # 计算 Portfolio Value
         portfolio_value = self.cash + self.inventory * self.mid
         delta_pnl = portfolio_value - self.last_pv
         gross_pnl = delta_pnl + fee_t
@@ -1237,12 +1237,12 @@ class MarketMakingEnvV2(gym.Env):
         self.cum_gross_pnl += gross_pnl
         self.cum_fees += fee_t
         
-        # 計算 Reward
+        # 计算 Reward
         reward = self._compute_reward(delta_pnl, fee_t, trades_count, terminated, portfolio_value)
         
         self.last_pv = portfolio_value
         
-        # 更新指標
+        # 更新指标
         self.metrics.update(
             step=self.t,
             portfolio_value=portfolio_value,
@@ -1256,7 +1256,7 @@ class MarketMakingEnvV2(gym.Env):
             prev_mid_price=self.prev_mid,
         )
         
-        # 建構 info
+        # 建构 info
         obs = self._get_obs()
         info = {
             "portfolio_value": portfolio_value,
@@ -1280,21 +1280,21 @@ class MarketMakingEnvV2(gym.Env):
     
     def _compute_reward(self, delta_pnl: float, fee: float, trades: int, 
                         terminated: bool, portfolio_value: float) -> float:
-        """根據配置計算 reward
+        """根据配置计算 reward
         
-        🆕 v3: 增加 Reward 範圍驗證與日誌
+        🆕 v3: 增加 Reward 范围验证与日志
         """
         mode = self.reward_cfg.mode
-        scale = self.reward_cfg.reward_scale  # 🆕 v3: 獎勵縮放
+        scale = self.reward_cfg.reward_scale  # 🆕 v3: 奖励缩放
         
-        # Debug: 追蹤 reward 組件 (每 100 步記錄一次)
+        # Debug: 追踪 reward 组件 (每 100 步记录一次)
         _debug_reward = hasattr(self, '_reward_debug_counter')
         if not _debug_reward:
             self._reward_debug_counter = 0
             self._reward_components = []
         
         if mode == RewardMode.DENSE:
-            # 傳統方式：即時 reward
+            # 传统方式：即时 reward
             penalty = self.reward_cfg.lambda_inventory * abs(self.inventory)
             turnover_penalty = self.reward_cfg.lambda_turnover * trades
             raw_reward = delta_pnl - penalty - turnover_penalty
@@ -1314,7 +1314,7 @@ class MarketMakingEnvV2(gym.Env):
             return scaled_reward
         
         elif mode == RewardMode.SPARSE:
-            # 只在結束時給 reward
+            # 只在结束时给 reward
             if terminated:
                 total_pnl = portfolio_value - self.initial_cash
                 raw_reward = total_pnl * self.reward_cfg.sparse_scale
@@ -1337,33 +1337,44 @@ class MarketMakingEnvV2(gym.Env):
             shaping = self.reward_cfg.gamma * current_potential - self.last_potential
             self.last_potential = current_potential
             
-            # 基礎 reward 是淨損益
+            # 基础 reward 是净损益
             base_reward = delta_pnl - self.reward_cfg.lambda_turnover * trades
             
-            # === 庫存回歸獎勵 ===
+            # === 库存回归奖励 ===
             revert_bonus = 0.0
             if abs(self.inventory) < abs(self.last_inventory):
                 revert_bonus = self.reward_cfg.inventory_revert_bonus if self.reward_cfg.inventory_revert_bonus > 0 else 0.5
             
-            # === 庫存方向警告懲罰 ===
+            # === 库存方向警告惩罚 ===
             direction_penalty = 0.0
             inv_ratio = abs(self.inventory) / self.max_inventory
             if inv_ratio > 0.6:
                 direction_penalty = -0.2 * inv_ratio
             
-            # === Spread 捕獲獎勵 ===
+            # === Spread 捕获奖励 ===
             spread_bonus = 0.0
             if self.reward_cfg.spread_capture_bonus > 0 and trades > 0:
                 if delta_pnl > 0:
                     spread_bonus = self.reward_cfg.spread_capture_bonus * delta_pnl
             
-            # === Round-trip 獎勵 ===
+            # === Round-trip 奖励 ===
             round_trip_bonus = 0.0
             if self.reward_cfg.round_trip_bonus > 0:
                 if abs(self.last_inventory) > 0 and abs(self.inventory) == 0:
                     round_trip_bonus = self.reward_cfg.round_trip_bonus
             
-            raw_reward = base_reward + shaping + revert_bonus + direction_penalty + spread_bonus + round_trip_bonus
+            # === 波动率惩罚 (Volatility Penalty) ===
+            # 在高波动率时持有库存给予额外惩罚，防止 Blowup
+            vol_penalty = 0.0
+            if abs(self.inventory) > 0:
+                # 使用短期波动率 (5 min)
+                current_vol = self.volatilities[5][self.current_step] if 5 in self.volatilities else 0.0
+                # 阈值设为 0.002 (0.2%), 超过此值开始惩罚
+                if current_vol > 0.002:
+                     # 係数 200.0: 若 vol=0.005 (0.5%), inv=1 -> pen = -0.6
+                     vol_penalty = -200.0 * (current_vol - 0.002) * abs(self.inventory)
+
+            raw_reward = base_reward + shaping + revert_bonus + direction_penalty + spread_bonus + round_trip_bonus + vol_penalty
             scaled_reward = raw_reward * scale
             
             # Debug logging (每 100 步)
@@ -1379,20 +1390,21 @@ class MarketMakingEnvV2(gym.Env):
                     'direction_pen': direction_penalty,
                     'spread': spread_bonus,
                     'round_trip': round_trip_bonus,
+                    'vol_penalty': vol_penalty,
                     'scale_factor': scale
                 })
             
             self._reward_debug_counter += 1
             
-            # 範圍驗證 (警告異常值)
+            # 范围验证 (警告异常值)
             if abs(scaled_reward) > 100:
                 import warnings
                 warnings.warn(f"⚠️  Reward 異常: {scaled_reward:.2f} (raw={raw_reward:.2f}, scale={scale})")
                 
-                # [新增] 強制截斷獎勵，保護訓練穩定性
-                # 將獎勵限制在 [-10, 10] 之間，避免梯度爆炸
-                clip_value = 10.0
-                scaled_reward = max(min(scaled_reward, clip_value), -clip_value)
+                # [修正] 非对称截断 (Asymmetric Clipping)
+                # 允许较大的惩罚 (负值) 以便学习避险，但限制正向奖励防止梯度爆炸
+                # 范围: [-100, 10]
+                scaled_reward = max(min(scaled_reward, 10.0), -100.0)
             
             return scaled_reward
         
@@ -1439,7 +1451,7 @@ class MarketMakingEnvV2(gym.Env):
               f"cash={self.cash:.2f}, PV={pv:.2f}")
     
     def _slice_by_date_range(self, df: pd.DataFrame, date_range: Tuple[str, str]) -> pd.DataFrame:
-        """按日期範圍切割資料"""
+        """按日期范围切割资料"""
         start, end = date_range
         if start is None and end is None:
             return df
@@ -1468,7 +1480,7 @@ class MarketMakingEnvV2(gym.Env):
         
         sliced = df.loc[mask].copy()
         if sliced.empty:
-            raise ValueError("日期範圍切割後無資料")
+            raise ValueError("日期范围切割后无资料")
         return sliced
 
 
@@ -1484,14 +1496,14 @@ def create_env_v2(
     enable_domain_rand: bool = False,
     **kwargs
 ) -> MarketMakingEnvV2:
-    """便利的環境建構函式"""
+    """便利的环境建构函数"""
     
     reward_cfg = RewardConfig(mode=RewardMode(reward_mode))
     obs_cfg = ObservationConfig()
     action_cfg = ActionConfig(mode=action_mode)
     dr_cfg = DomainRandomizationConfig(enabled=enable_domain_rand)
     
-    # 從 env_config 覆寫
+    # 从 env_config 覆写
     if env_config:
         for key, value in env_config.items():
             if hasattr(reward_cfg, key):

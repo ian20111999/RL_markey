@@ -1,3 +1,9 @@
+import sys
+from pathlib import Path
+
+# Add project root to path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 import yaml
 import numpy as np
@@ -12,6 +18,8 @@ from envs.market_making_env_v2 import (
 def evaluate(run_folder, n_episodes=30, model_file=None):
     run_path = Path(run_folder)
     config_path = run_path / 'config.yaml'
+    if not config_path.exists():
+        config_path = run_path / 'env_config.yaml'
     
     if model_file:
         model_path = Path(model_file)

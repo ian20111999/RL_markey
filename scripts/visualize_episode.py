@@ -20,6 +20,8 @@ from utils.risk_sensitive import DynamicPositionLimitWrapper
 def visualize(run_folder, episode_idx=0):
     run_path = Path(run_folder)
     config_path = run_path / 'config.yaml'
+    if not config_path.exists():
+        config_path = run_path / 'env_config.yaml'
     model_path = run_path / 'best_model' / 'best_model.zip'
     
     # Load config

@@ -15,10 +15,10 @@ env:
   data_file: "data/btc_usdt_1m_2023.csv"
   episode_length: 1440
   initial_cash: 10000.0
-  max_inventory: 5.0
+  max_inventory: 3.0            # Reverted to 3.0 as 2.0 was too restrictive
   random_start: true
   fee_rate: 0.0004
-  base_spread: 25.0
+  base_spread: 60.0
 
 data_augmentation:
   enable_price_flip: true
@@ -42,18 +42,18 @@ observation:
 reward:
   mode: "shaped"
   reward_scale: 0.001
-  lambda_inventory: 10.0            # Keep the "Nuclear" penalty
-  lambda_turnover: 0.0
+  lambda_inventory: 10.0            # Reverted to 10.0, using vol penalty instead
+  lambda_turnover: 0.01             # Small penalty to prevent wash trading
   gamma: 0.99
   sparse_scale: 0.01
   terminal_bonus_weight: 0.3
-  spread_capture_bonus: 0.0
+  spread_capture_bonus: 0.5         # Incentivize capturing spread
   round_trip_bonus: 0.0
   inventory_revert_bonus: 0.5
 
 action:
   mode: "asymmetric"
-  allow_no_quote: false
+  allow_no_quote: true              # Allow agent to stop quoting
   max_spread_multiplier: 2.0
   min_spread_multiplier: 0.5
 
@@ -65,7 +65,10 @@ dynamic_position_limit:
   max_inventory_ratio: 1.0
 
 domain_randomization:
-  enabled: false
+  enabled: true                     # Enable DR to prevent overfitting
+  drift_range: [-0.0001, 0.0001]
+  volatility_range: [0.8, 1.2]
+  spread_range: [0.8, 1.2]
 
 risk_sensitive:
   enabled: false
