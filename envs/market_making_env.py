@@ -103,6 +103,10 @@ class RewardConfig:
     
     # 🆕 v3: Reward 缩放（稳定训练）
     reward_scale: float = 1.0             # 奖励缩放因子，建议 0.001 将奖励标准化
+    
+    # 🆕 v5: 风险控制参数
+    lambda_inventory_age: float = 0.0     # 库存年龄惩罚 (每步扣除)
+    max_drawdown_penalty: float = 0.0     # 最大回撤惩罚 (当回撤超过阈值时)
 
 
 @dataclass
@@ -403,7 +407,7 @@ class MetricsTracker:
 # Main Environment Class
 # =============================================================================
 
-class MarketMakingEnvV2(gym.Env):
+class MarketMakingEnv(gym.Env):
     """改良版做市环境"""
     
     metadata = {"render_modes": ["human"]}
@@ -1258,6 +1262,14 @@ class MarketMakingEnvV2(gym.Env):
         
         # 建构 info
         obs = self._get_obs()
+        
+        # Capture trades for evaluation
+        executed_trades = []
+        if bid_filled:
+            executed_trades.append({'side': 'buy', 'price': fill_bid.price, 'qty': 1.0})
+        if ask_filled:
+            executed_trades.append({'side': 'sell', 'price': fill_ask.price, 'qty': 1.0})
+
         info = {
             "portfolio_value": portfolio_value,
             "inventory": self.inventory,
@@ -1268,6 +1280,8 @@ class MarketMakingEnvV2(gym.Env):
             "trades_count": trades_count,
             "quoted": should_quote,
             "step": self.t,
+            "trades": executed_trades,
+            "step_pnl": delta_pnl, # 🆕 Added
         }
         
         if terminated:
@@ -1371,10 +1385,30 @@ class MarketMakingEnvV2(gym.Env):
                 current_vol = self.volatilities[5][self.current_step] if 5 in self.volatilities else 0.0
                 # 阈值设为 0.002 (0.2%), 超过此值开始惩罚
                 if current_vol > 0.002:
-                     # 係数 200.0: 若 vol=0.005 (0.5%), inv=1 -> pen = -0.6
-                     vol_penalty = -200.0 * (current_vol - 0.002) * abs(self.inventory)
+                     # 🆕 非线性惩罚: 指数级增长 (Power 2)
+                     # 係数 50000.0: 若 vol=0.005 (0.5%), diff=0.003, diff^2=9e-6 -> pen = -0.45
+                     vol_penalty = -50000.0 * ((current_vol - 0.002) ** 2) * abs(self.inventory)
 
-            raw_reward = base_reward + shaping + revert_bonus + direction_penalty + spread_bonus + round_trip_bonus + vol_penalty
+            # === 趋势过滤惩罚 (Trend Filter Penalty) ===
+            trend_penalty = 0.0
+            if hasattr(self.obs_cfg, 'include_trend') and self.obs_cfg.include_trend and hasattr(self, 'trend_direction'):
+                # 使用 240 (4h) 作为主要趋势
+                trend_window = 240
+                if trend_window in self.trend_direction:
+                    current_trend = self.trend_direction[trend_window][self.current_step]
+                    # 如果趋势强烈向下 (<-0.005, i.e. price is 0.5% below SMA) 且持有正库存
+                    if current_trend < -0.005 and self.inventory > 0:
+                        # 强力惩罚，迫使清仓
+                        trend_penalty = -2.0 * abs(self.inventory)
+
+            # === 🆕 v5: 库存年龄惩罚 (Inventory Age Penalty) ===
+            age_penalty = 0.0
+            if self.reward_cfg.lambda_inventory_age > 0 and abs(self.inventory) > 0:
+                # 惩罚随时间线性增长，迫使快速周转
+                # 例如: lambda=0.001, age=60 (1hr) -> penalty = -0.06
+                age_penalty = -self.reward_cfg.lambda_inventory_age * self.inventory_age
+
+            raw_reward = base_reward + shaping + revert_bonus + direction_penalty + spread_bonus + round_trip_bonus + vol_penalty + trend_penalty + age_penalty
             scaled_reward = raw_reward * scale
             
             # Debug logging (每 100 步)
@@ -1391,6 +1425,8 @@ class MarketMakingEnvV2(gym.Env):
                     'spread': spread_bonus,
                     'round_trip': round_trip_bonus,
                     'vol_penalty': vol_penalty,
+                    'trend_penalty': trend_penalty,
+                    'age_penalty': age_penalty,
                     'scale_factor': scale
                 })
             

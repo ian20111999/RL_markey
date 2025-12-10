@@ -181,6 +181,9 @@ def create_env(data: pd.DataFrame, config: ExperimentConfig, seed: Optional[int]
     
     # 處理 reward_config
     reward_cfg = env_cfg.get("reward_config", {})
+    if not reward_cfg:
+        reward_cfg = config.raw.get("reward", {})
+        
     if reward_cfg:
         kwargs["reward_config"] = RewardConfig(**{
             k: v for k, v in reward_cfg.items()
@@ -189,6 +192,9 @@ def create_env(data: pd.DataFrame, config: ExperimentConfig, seed: Optional[int]
     
     # 處理 obs_config
     obs_cfg = env_cfg.get("obs_config", {})
+    if not obs_cfg:
+        obs_cfg = config.raw.get("observation", {})
+
     if obs_cfg:
         kwargs["obs_config"] = ObservationConfig(**{
             k: v for k, v in obs_cfg.items()
@@ -197,6 +203,9 @@ def create_env(data: pd.DataFrame, config: ExperimentConfig, seed: Optional[int]
     
     # 處理 action_config
     action_cfg = env_cfg.get("action_config", {})
+    if not action_cfg:
+        action_cfg = config.raw.get("action", {})
+
     if action_cfg:
         kwargs["action_config"] = ActionConfig(**{
             k: v for k, v in action_cfg.items()

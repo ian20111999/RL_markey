@@ -159,7 +159,11 @@ def visualize(run_folder, episode_idx=0):
     ax3.set_ylabel('USDT')
     
     plt.tight_layout()
-    output_file = f'plots/episode_{episode_idx}_vis.png'
+    
+    plots_dir = run_path / 'plots'
+    plots_dir.mkdir(exist_ok=True)
+    output_file = plots_dir / f'episode_{episode_idx}_vis.png'
+    
     plt.savefig(output_file)
     print(f'Saved visualization to {output_file}')
 

@@ -11,8 +11,8 @@ import pandas as pd
 from pathlib import Path
 import argparse
 from stable_baselines3 import SAC
-from envs.market_making_env_v2 import (
-    MarketMakingEnvV2, RewardConfig, ObservationConfig, ActionConfig
+from envs.market_making_env import (
+    MarketMakingEnv, RewardConfig, ObservationConfig, ActionConfig
 )
 
 def evaluate(run_folder, n_episodes=30, model_file=None):
@@ -87,7 +87,7 @@ def evaluate(run_folder, n_episodes=30, model_file=None):
         min_spread_multiplier=action_cfg.get('min_spread_multiplier', 0.5),
     )
 
-    env = MarketMakingEnvV2(
+    env = MarketMakingEnv(
         df=test_df,
         initial_cash=env_cfg.get('initial_cash', 10000),
         fee_rate=env_cfg.get('fee_rate', 0.0004),
@@ -156,6 +156,20 @@ def evaluate(run_folder, n_episodes=30, model_file=None):
     print(f'   Mean MaxInv:    {np.mean(all_max_inv):.2f}')
     print(f'   Positive Eps:   {sum(1 for p in all_pnls if p > 0)} / {n_episodes} ({sum(1 for p in all_pnls if p > 0)/n_episodes*100:.0f}%)')
     print(f'   Total PnL:      {sum(all_pnls):+,.2f}')
+
+    # Save results to JSON
+    import json
+    results = {
+        "mean_pnl": float(np.mean(all_pnls)),
+        "std_pnl": float(np.std(all_pnls)),
+        "mean_trades": float(np.mean(all_trades)),
+        "mean_max_inv": float(np.mean(all_max_inv)),
+        "win_rate": float(sum(1 for p in all_pnls if p > 0) / n_episodes),
+        "total_pnl": float(sum(all_pnls))
+    }
+    with open(run_path / "evaluation_results.json", "w") as f:
+        json.dump(results, f, indent=4)
+    print(f"✅ Results saved to {run_path / 'evaluation_results.json'}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

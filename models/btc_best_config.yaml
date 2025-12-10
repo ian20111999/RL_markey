@@ -1,0 +1,66 @@
+action:
+  allow_no_quote: true
+  max_spread_multiplier: 2.0
+  min_spread_multiplier: 0.5
+  mode: asymmetric
+data_augmentation:
+  enable_price_flip: true
+dynamic_position_limit:
+  enabled: true
+env:
+  base_spread: 60.0
+  data_file: data/btc_usdt_1m_2023.csv
+  episode_length: 1440
+  fee_rate: 0.0004
+  id: MarketMakingEnv
+  initial_cash: 10000.0
+  max_inventory: 2.0
+  random_start: true
+fill_model:
+  enabled: false
+observation:
+  include_inventory: true
+  include_inventory_age: true
+  include_momentum: true
+  include_price: true
+  include_time: true
+  include_trend: true
+  include_volatility: true
+  include_volume: true
+  momentum_windows:
+  - 5
+  - 15
+  trend_windows:
+  - 60
+  - 240
+  - 1440
+  volatility_windows:
+  - 5
+  - 15
+  - 60
+reward:
+  gamma: 0.99
+  inventory_revert_bonus: 0.5
+  lambda_inventory: 20.0
+  lambda_inventory_age: 0.1
+  lambda_turnover: 0.01
+  mode: shaped
+  reward_scale: 0.001
+  round_trip_bonus: 0.0
+  sparse_scale: 0.01
+  spread_capture_bonus: 0.5
+  terminal_bonus_weight: 0.3
+train:
+  batch_size: 256
+  buffer_size: 100000
+  ent_coef: auto
+  gamma: 0.99
+  gradient_steps: 1
+  learning_rate: 3.0e-05
+  learning_starts: 10000
+  net_arch:
+  - 256
+  - 256
+  target_entropy: auto
+  tau: 0.02
+  train_freq: 1

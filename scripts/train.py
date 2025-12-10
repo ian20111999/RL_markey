@@ -17,8 +17,8 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
 from stable_baselines3.common.utils import set_random_seed
 
-from envs.market_making_env_v2 import (
-    MarketMakingEnvV2, RewardConfig, ObservationConfig, ActionConfig,
+from envs.market_making_env import (
+    MarketMakingEnv, RewardConfig, ObservationConfig, ActionConfig,
     RewardMode, FillModelEnvConfig, AdvancedObservationConfig
 )
 from utils.risk_sensitive import DynamicPositionLimitWrapper
@@ -112,7 +112,7 @@ def create_env(data, config, seed=None):
         trend_windows=obs_config.get('trend_windows', [60, 240, 1440]),
     )
     
-    env = MarketMakingEnvV2(
+    env = MarketMakingEnv(
         df=data,
         initial_cash=env_config.get('initial_cash', 10000),
         fee_rate=env_config.get('fee_rate', 0.0004),
@@ -143,17 +143,19 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--total_timesteps", type=int, default=200000)
     parser.add_argument("--config", type=str, default='configs/env_v3_stabilized.yaml')
-    parser.add_argument("--model_path", type=str, default='runs/v3_nuclear_continued_20251206_122315/best_model/best_model.zip')
+    parser.add_argument("--model_path", type=str, default=None)
     # Add missing arguments to match restart_training.sh
     parser.add_argument("--base_model", type=str, dest="model_path", help="Alias for model_path")
     parser.add_argument("--learning_rate", type=float, help="Override learning rate")
     parser.add_argument("--batch_size", type=int, help="Override batch size")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--output_dir", type=str, help="Override output directory")
     args = parser.parse_args()
 
     # Paths
     config_path = args.config
     model_path = args.model_path
+    seed = args.seed
     
     # Create new run directory
     if args.output_dir:
@@ -220,110 +222,107 @@ def main():
         return _init
 
     if num_cpu > 1:
-        vec_env = SubprocVecEnv([make_env(i) for i in range(num_cpu)])
+        vec_env = SubprocVecEnv([make_env(i, seed=seed) for i in range(num_cpu)])
     else:
-        vec_env = DummyVecEnv([make_env(0)])
+        vec_env = DummyVecEnv([make_env(0, seed=seed)])
 
-    eval_vec_env = DummyVecEnv([lambda: create_env(valid_data, config)])
+    eval_vec_env = DummyVecEnv([lambda: create_env(valid_data, config, seed=seed)])
     
     # Load Model
-    logger.info(f"Loading model from {model_path}...")
-    # We load the model but we need to update the learning rate and other hyperparameters
-    # SAC.load will load the saved parameters. We need to override them.
-    # However, stable-baselines3 load() doesn't easily allow overriding optimizer params directly in the load call for everything.
-    # But we can modify the model object after loading.
-    
-    custom_objects = {
-        "learning_rate": config['train']['learning_rate'],
-        "batch_size": config['train']['batch_size'],
-        "ent_coef": config['train']['ent_coef'],
-        "target_entropy": config['train']['target_entropy']
-    }
-    
-    # Note: changing LR after load requires updating the optimizer's param groups if the optimizer is already loaded.
-    # But SB3 re-creates the optimizer on learn() if it's not fully restored? No, it restores it.
-    # A safer way is to pass `custom_objects` to load, but that's for pickle compatibility.
-    # The best way to change LR is to set `model.learning_rate` to a float or schedule.
-    
-    model = SAC.load(model_path, env=vec_env)
-    
-    # UPDATE HYPERPARAMETERS
-    new_lr = config['train']['learning_rate']
-    new_batch_size = config['train']['batch_size']
-    new_ent_coef = config['train']['ent_coef']
-    
-    logger.info(f"Updating Hyperparameters: LR={new_lr}, Batch={new_batch_size}, EntCoef={new_ent_coef}")
-    
-    # 1. Update Learning Rate - ROBUST METHOD
-    # Step 1: Update model attribute
-    model.learning_rate = new_lr
-    
-    # Step 2: Force update all optimizers (handle various SB3 internal structures)
-    optimizers_updated = []
-    
-    # Update Actor Optimizer
-    if hasattr(model, 'actor'):
-        if hasattr(model.actor, 'optimizer'):
-            for param_group in model.actor.optimizer.param_groups:
-                param_group['lr'] = new_lr
-            optimizers_updated.append(f"Actor: {new_lr}")
+    # Load Model or Create New
+    if model_path and Path(model_path).exists():
+        logger.info(f"Loading model from {model_path}...")
+        model = SAC.load(model_path, env=vec_env)
         
-    # Update Critic Optimizer
-    if hasattr(model, 'critic'):
-        if hasattr(model.critic, 'optimizer'):
-            for param_group in model.critic.optimizer.param_groups:
-                param_group['lr'] = new_lr
-            optimizers_updated.append(f"Critic: {new_lr}")
-    
-    # Update Critic Target (if exists)
-    if hasattr(model, 'critic_target'):
-        if hasattr(model.critic_target, 'optimizer'):
-            for param_group in model.critic_target.optimizer.param_groups:
-                param_group['lr'] = new_lr
-            optimizers_updated.append(f"Critic Target: {new_lr}")
-            
-    # Update Entropy Optimizer (if exists)
-    if hasattr(model, 'ent_coef_optimizer') and model.ent_coef_optimizer is not None:
-        for param_group in model.ent_coef_optimizer.param_groups:
-            param_group['lr'] = new_lr
-        optimizers_updated.append(f"Entropy: {new_lr}")
-    
-    # Verify updates
-    logger.info("=" * 60)
-    logger.info("Learning Rate Update Verification:")
-    for update_msg in optimizers_updated:
-        logger.info(f"  ✓ {update_msg}")
-    
-    # Additional verification: check actual optimizer state
-    if hasattr(model, 'actor') and hasattr(model.actor, 'optimizer'):
-        actual_lr = model.actor.optimizer.param_groups[0]['lr']
-        logger.info(f"  → Verified Actor LR: {actual_lr}")
-        if abs(actual_lr - new_lr) > 1e-9:
-            logger.warning(f"  ⚠️  LR mismatch! Expected {new_lr}, got {actual_lr}")
-    logger.info("=" * 60)
+        # UPDATE HYPERPARAMETERS
+        new_lr = config['train']['learning_rate']
+        new_batch_size = config['train']['batch_size']
+        new_ent_coef = config['train']['ent_coef']
         
-    # 2. Update Batch Size
-    model.batch_size = new_batch_size
-    
-    # 3. Update Entropy Coefficient
-    # If it was 'auto', ent_coef_optimizer might exist. If it was fixed, it might not.
-    # The previous model had ent_coef=0.1 (fixed).
-    # The new config has ent_coef="auto".
-    # This is tricky. Switching from fixed to auto requires initializing log_ent_coef and ent_coef_optimizer.
-    
-    if new_ent_coef == 'auto' and not isinstance(model.ent_coef, str):
-        logger.info("Switching from Fixed Entropy to Auto Entropy...")
-        # We need to re-initialize entropy optimization
-        model.ent_coef = 'auto'
-        model.target_entropy = config['train']['target_entropy']
-        if model.target_entropy == 'auto':
-            # Use vec_env.action_space instead of env.action_space
-            model.target_entropy = float(-np.prod(vec_env.action_space.shape).astype(np.float32))
+        logger.info(f"Updating Hyperparameters: LR={new_lr}, Batch={new_batch_size}, EntCoef={new_ent_coef}")
+        
+        # 1. Update Learning Rate - ROBUST METHOD
+        # Step 1: Update model attribute
+        model.learning_rate = new_lr
+        
+        # Step 2: Force update all optimizers (handle various SB3 internal structures)
+        optimizers_updated = []
+        
+        # Update Actor Optimizer
+        if hasattr(model, 'actor'):
+            if hasattr(model.actor, 'optimizer'):
+                for param_group in model.actor.optimizer.param_groups:
+                    param_group['lr'] = new_lr
+                optimizers_updated.append(f"Actor: {new_lr}")
             
-        # Initialize log_ent_coef
-        import torch
-        model.log_ent_coef = torch.log(torch.ones(1, device=model.device)).requires_grad_(True)
-        model.ent_coef_optimizer = torch.optim.Adam([model.log_ent_coef], lr=new_lr)
+        # Update Critic Optimizer
+        if hasattr(model, 'critic'):
+            if hasattr(model.critic, 'optimizer'):
+                for param_group in model.critic.optimizer.param_groups:
+                    param_group['lr'] = new_lr
+                optimizers_updated.append(f"Critic: {new_lr}")
+        
+        # Update Critic Target (if exists)
+        if hasattr(model, 'critic_target'):
+            if hasattr(model.critic_target, 'optimizer'):
+                for param_group in model.critic_target.optimizer.param_groups:
+                    param_group['lr'] = new_lr
+                optimizers_updated.append(f"Critic Target: {new_lr}")
+                
+        # Update Entropy Optimizer (if exists)
+        if hasattr(model, 'ent_coef_optimizer') and model.ent_coef_optimizer is not None:
+            for param_group in model.ent_coef_optimizer.param_groups:
+                param_group['lr'] = new_lr
+            optimizers_updated.append(f"Entropy: {new_lr}")
+        
+        # Verify updates
+        logger.info("=" * 60)
+        logger.info("Learning Rate Update Verification:")
+        for update_msg in optimizers_updated:
+            logger.info(f"  ✓ {update_msg}")
+        
+        # Additional verification: check actual optimizer state
+        if hasattr(model, 'actor') and hasattr(model.actor, 'optimizer'):
+            actual_lr = model.actor.optimizer.param_groups[0]['lr']
+            logger.info(f"  → Verified Actor LR: {actual_lr}")
+            if abs(actual_lr - new_lr) > 1e-9:
+                logger.warning(f"  ⚠️  LR mismatch! Expected {new_lr}, got {actual_lr}")
+        logger.info("=" * 60)
+            
+        # 2. Update Batch Size
+        model.batch_size = new_batch_size
+        
+        # 3. Update Entropy Coefficient
+        if new_ent_coef == 'auto' and not isinstance(model.ent_coef, str):
+            logger.info("Switching from Fixed Entropy to Auto Entropy...")
+            model.ent_coef = 'auto'
+            model.target_entropy = config['train']['target_entropy']
+            if model.target_entropy == 'auto':
+                model.target_entropy = float(-np.prod(vec_env.action_space.shape).astype(np.float32))
+                
+            import torch
+            model.log_ent_coef = torch.log(torch.ones(1, device=model.device)).requires_grad_(True)
+            model.ent_coef_optimizer = torch.optim.Adam([model.log_ent_coef], lr=new_lr)
+            
+    else:
+        logger.info("Creating new SAC model from scratch...")
+        model = SAC(
+            "MlpPolicy",
+            vec_env,
+            verbose=1,
+            learning_rate=config['train']['learning_rate'],
+            batch_size=config['train']['batch_size'],
+            buffer_size=config['train']['buffer_size'],
+            gamma=config['train']['gamma'],
+            tau=config['train']['tau'],
+            train_freq=config['train']['train_freq'],
+            gradient_steps=config['train']['gradient_steps'],
+            ent_coef=config['train']['ent_coef'],
+            target_entropy=config['train']['target_entropy'],
+            learning_starts=config['train']['learning_starts'],
+            policy_kwargs=dict(net_arch=config['train']['net_arch']),
+            tensorboard_log=str(output_dir)
+        )
     
     # Callbacks
     eval_callback = EvalCallback(

@@ -1,0 +1,69 @@
+# =============================================================================
+# MarketMakingEnv Configuration (Default)
+# 
+# Strategy: Risk Controlled Market Making
+# =============================================================================
+
+env:
+  id: "MarketMakingEnv"
+  data_file: "data/btc_usdt_1m_2023.csv"  # Default, will be overridden by pipeline
+  episode_length: 1440
+  initial_cash: 10000.0
+  max_inventory: 2.0
+  random_start: true
+  fee_rate: 0.0004
+  base_spread: 60.0
+
+data_augmentation:
+  enable_price_flip: true
+
+fill_model:
+  enabled: false
+
+observation:
+  include_price: true
+  include_inventory: true
+  include_time: true
+  include_volatility: true
+  include_momentum: true
+  include_volume: true
+  include_inventory_age: true
+  include_trend: true
+  trend_windows: [60, 240, 1440]
+  volatility_windows: [5, 15, 60]
+  momentum_windows: [5, 15]
+
+reward:
+  mode: "shaped"
+  reward_scale: 1.0e-6
+  lambda_inventory: 20.0
+  lambda_turnover: 0.01
+  lambda_inventory_age: 0.1
+  gamma: 0.99
+  sparse_scale: 0.01
+  terminal_bonus_weight: 0.3
+  spread_capture_bonus: 0.5
+  round_trip_bonus: 0.0
+  inventory_revert_bonus: 0.5
+
+action:
+  mode: "asymmetric"
+  allow_no_quote: true
+  max_spread_multiplier: 2.0
+  min_spread_multiplier: 0.5
+
+dynamic_position_limit:
+  enabled: true
+
+train:
+  learning_rate: 0.00003
+  batch_size: 256
+  buffer_size: 100000
+  gamma: 0.99
+  tau: 0.02
+  train_freq: 1
+  gradient_steps: 1
+  ent_coef: "auto"
+  target_entropy: "auto"
+  learning_starts: 10000
+  net_arch: [256, 256]
