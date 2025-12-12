@@ -41,7 +41,11 @@ python production/dashboard.py
 # 訪問 http://localhost:8080
 ```
 
-詳細文檔請查看：[生產部署指南](docs/PRODUCTION_GUIDE.md)
+詳細文檔請查看：
+- **[快速開始指南](docs/QUICKSTART.md)** - 5分鐘快速上手
+- **[生產部署指南](docs/PRODUCTION_GUIDE.md)** - 完整部署文檔（英文）
+- **[用戶使用指南](docs/USER_GUIDE_ZH.md)** - 詳細使用說明（中文）
+- **[功能總結](PRODUCTION_SUMMARY.md)** - 生產級功能完整總結
 
 ---
 
