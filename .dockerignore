@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Documentation (not needed in container)
+docs/
+examples/
+
+# Tests (not needed in production)
+tests/
+pytest.ini
+.pytest_cache/
+
+# Development files
+.coverage
+.tox/
+*.log
+
+# Large runtime directories
+runs/
+logs/
+plots/
+
+# Data (mount as volume instead)
+# data/
+
+# Temporary files
+*.tmp
+*.bak
+.DS_Store
