@@ -63,4 +63,11 @@ data/*.parquet
 
 # Optuna
 *.db
-data/*.csv
+
+# Production - Registry (keep metadata, ignore models)
+models/registry/models/
+!models/registry/registry.json
+models/leaderboard.csv
+
+# Production - Templates
+production/templates/

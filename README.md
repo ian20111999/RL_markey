@@ -12,6 +12,41 @@
 - **專業回測框架**：Walk-Forward Analysis、Monte Carlo Simulation
 - **自動化報告**：HTML/PDF 報告生成
 
+## 🚀 **NEW: 生產級部署功能**
+
+現在包含完整的生產環境支援，讓任何人都能輕鬆產出穩定且可獲利的模型：
+
+- **🤖 自動化訓練 CLI**：一鍵訓練可獲利模型（自動重試直到成功）
+- **📊 模型註冊系統**：自動追蹤所有模型的性能指標與版本
+- **🌐 REST API**：生產級 HTTP API 用於模型推論和管理
+- **📈 Web 監控面板**：視覺化模型性能和系統健康狀態
+- **🐳 Docker 支援**：一鍵容器化部署
+- **✅ 自動驗證**：只有通過盈利標準的模型才會被標記為「生產就緒」
+
+### 快速開始（生產環境）
+
+```bash
+# 1. 安裝依賴
+pip install -r requirements.txt
+pip install -r requirements-production.txt
+
+# 2. 訓練一個可獲利的模型（自動重試）
+python production/cli.py train --symbol btc --attempts 3
+
+# 3. 啟動生產 API
+python production/cli.py serve --port 8000
+
+# 4. 查看監控面板
+python production/dashboard.py
+# 訪問 http://localhost:8080
+```
+
+詳細文檔請查看：
+- **[快速開始指南](docs/QUICKSTART.md)** - 5分鐘快速上手
+- **[生產部署指南](docs/PRODUCTION_GUIDE.md)** - 完整部署文檔（英文）
+- **[用戶使用指南](docs/USER_GUIDE_ZH.md)** - 詳細使用說明（中文）
+- **[功能總結](PRODUCTION_SUMMARY.md)** - 生產級功能完整總結
+
 ---
 
 ## 📁 專案結構
@@ -47,6 +82,12 @@ RL_markey/
 │   ├── online_adaptation.py   # 線上適應
 │   ├── distributed_training.py # 分散式訓練
 │   └── report_generator.py    # 報告生成
+│
+├── production/                 # 🆕 生產環境組件
+│   ├── model_registry.py      # 模型註冊系統
+│   ├── api.py                 # REST API 服務
+│   ├── cli.py                 # 生產 CLI 工具
+│   └── dashboard.py           # Web 監控面板
 │
 ├── models/                     # 模型與參數
 ├── runs/                       # 訓練記錄
