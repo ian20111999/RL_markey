@@ -167,17 +167,24 @@ class MonitoringDashboard:
         
         print(f"✅ Dashboard data exported to {output_path}")
     
-    def start_api_server(self, host: str = "0.0.0.0", port: int = 5000):
+    def start_api_server(self, host: str = "0.0.0.0", port: int = 5001):
         """Start REST API server for frontend (requires Flask)"""
         try:
-            from flask import Flask, jsonify, request
+            from flask import Flask, jsonify, request, send_from_directory
             from flask_cors import CORS
         except ImportError:
             print("❌ Flask not installed. Install with: pip install flask flask-cors")
             sys.exit(1)
         
-        app = Flask(__name__)
+        app = Flask(__name__, 
+                    template_folder='frontend/dashboards',
+                    static_folder='frontend/static')
         CORS(app)
+        
+        @app.route('/')
+        def index():
+            """Serve the enhanced dashboard HTML"""
+            return send_from_directory('frontend/dashboards', 'enhanced.html')
         
         @app.route('/api/dashboard', methods=['GET'])
         def get_dashboard():
@@ -192,7 +199,8 @@ class MonitoringDashboard:
             return jsonify({'status': 'ok', 'timestamp': datetime.now().isoformat()})
         
         print(f"🚀 Starting monitoring API server on {host}:{port}")
-        print(f"   Dashboard: http://{host}:{port}/api/dashboard")
+        print(f"   Dashboard: http://{host}:{port}/")
+        print(f"   API: http://{host}:{port}/api/dashboard")
         print(f"   Symbol details: http://{host}:{port}/api/symbol/<symbol>")
         print()
         

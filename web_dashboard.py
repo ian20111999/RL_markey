@@ -24,7 +24,9 @@ except ImportError:
 from utils.metrics_db import MetricsDatabase
 
 
-app = Flask(__name__, static_folder='.')
+app = Flask(__name__, 
+            template_folder='frontend/dashboards',
+            static_folder='frontend/static')
 CORS(app)
 
 # Global database instance
@@ -34,7 +36,7 @@ db = None
 @app.route('/')
 def index():
     """Serve the main dashboard HTML"""
-    return send_from_directory('.', 'dashboard.html')
+    return send_from_directory('frontend/dashboards', 'basic.html')
 
 
 @app.route('/api/health', methods=['GET'])
