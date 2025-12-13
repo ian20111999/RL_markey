@@ -167,7 +167,7 @@ class MonitoringDashboard:
         
         print(f"✅ Dashboard data exported to {output_path}")
     
-    def start_api_server(self, host: str = "0.0.0.0", port: int = 5001):
+    def start_api_server(self, host: str = "0.0.0.0", port: int = 5556):
         """Start REST API server for frontend (requires Flask)"""
         try:
             from flask import Flask, jsonify, request, send_from_directory

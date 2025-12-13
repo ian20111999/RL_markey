@@ -53,9 +53,10 @@ data/*.parquet
 !data/.gitkeep
 !data/btc_usdt_1m_2023.csv
 
-# Reports
+# Reports & HTML files
 *.html
 !docs/*.html
+!frontend/dashboards/*.html
 
 # Temporary files
 *.tmp
@@ -72,41 +73,5 @@ models/registry/models/
 !models/registry/registry.json
 models/leaderboard.csv
 
-# Production - Templates
+# Production - Templates (but allow frontend dashboards)
 production/templates/
-*.swp
-*.swo
-
-# Mac
-.DS_Store
-
-# Project specific - Runtime outputs
-logs/
-runs/
-plots/
-*.csv
-!data/*.csv
-
-# Models (keep JSON configs, ignore trained models)
-models/*.zip
-models/*.pkl
-!models/*.json
-!models/.gitkeep
-
-# Data (keep sample, ignore large files)
-data/*.parquet
-!data/btc_usdt_1m_2023.csv
-
-# Reports
-*.html
-!docs/*.html
-
-# Temporary files
-*.tmp
-*.bak
-*.orig
-.ipynb_checkpoints/
-
-# Optuna
-*.db
-data/*.csv

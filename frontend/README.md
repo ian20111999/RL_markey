@@ -19,13 +19,13 @@ frontend/
 ### 1. basic.html（基礎儀表板）
 - **用途**: 簡單的訓練進度監控
 - **啟動**: `python web_dashboard.py`
-- **端口**: 5000
+- **端口**: 5555
 - **特點**: 輕量級，基礎功能
 
 ### 2. enhanced.html（增強版儀表板）
 - **用途**: 進階監控與數據可視化
 - **啟動**: `python monitoring_dashboard.py`
-- **端口**: 5001
+- **端口**: 5556
 - **特點**: 圖表豐富，即時更新
 
 ### 3. production.html（生產級儀表板）
@@ -39,13 +39,13 @@ frontend/
 ### 快速啟動基礎儀表板
 ```bash
 python web_dashboard.py
-# 訪問 http://localhost:5000
+# 訪問 http://localhost:5555
 ```
 
 ### 啟動增強版儀表板
 ```bash
 python monitoring_dashboard.py
-# 訪問 http://localhost:5001
+# 訪問 http://localhost:5556
 ```
 
 ### 啟動生產級儀表板
