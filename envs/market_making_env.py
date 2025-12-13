@@ -729,7 +729,10 @@ class MarketMakingEnv(gym.Env):
                 self.trend_sma[window] = sma
                 
                 # 趋势方向: (当前价格 - 历史SMA) / 历史SMA
-                direction = np.where(sma > 0, (self.closes - sma) / sma, 0)
+                # 使用 mask 避免除以零警告
+                direction = np.zeros_like(sma)
+                mask = sma > 1e-8
+                direction[mask] = (self.closes[mask] - sma[mask]) / sma[mask]
                 direction[:window] = 0.0  # 前 window 步设为 0
                 
                 self.trend_direction[window] = direction

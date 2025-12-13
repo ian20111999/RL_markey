@@ -1,0 +1,95 @@
+# =============================================================================
+# Auto Pipeline Configuration
+# Control automated training pipeline behavior
+# =============================================================================
+
+pipeline:
+  # Maximum retry attempts for training
+  max_retries: 5
+  
+  # Timeout for training (seconds)
+  training_timeout: 3600  # 1 hour
+  
+  # Timeout for evaluation (seconds)
+  evaluation_timeout: 600  # 10 minutes
+  
+  # Number of episodes for evaluation
+  eval_episodes: 30
+  
+  # Total timesteps for training
+  total_timesteps: 200000
+  
+  # Enable early stopping if good results found
+  early_stopping: true
+  
+  # Clean up failed runs
+  cleanup_failed_runs: true
+
+# Data validation thresholds
+data_validation:
+  min_samples: 10000
+  max_missing_ratio: 0.01
+  min_volatility: 0.0001
+  max_volatility: 0.5
+
+# Environment health checks
+environment_validation:
+  check_spread_ratio: true
+  check_initial_cash: true
+  check_episode_length: true
+
+# Training result acceptance criteria
+training_acceptance:
+  min_pnl: 0
+  min_win_rate: 0.45
+  min_sharpe: 0.0
+  max_drawdown: -0.3
+  min_composite_score: 60
+
+# Production readiness criteria (stricter than training acceptance)
+production_readiness:
+  min_sharpe: 0.5
+  max_drawdown: -0.25
+  min_win_rate: 0.48
+  min_trades: 50
+  min_profit_factor: 1.2
+  max_volatility_ratio: 2.0
+
+# Auto parameter tuning
+auto_tuning:
+  enabled: true
+  
+  # Base spread as ratio of price
+  spread_ratio: 0.0005  # 0.05% = 5 bps
+  
+  # Initial cash as multiple of price
+  cash_multiplier: 10.0
+  
+  # Reward scale adjustment
+  reward_scale_base: 1.0e-6
+  reward_scale_reference_price: 100000.0  # BTC reference
+
+# Logging and monitoring
+logging:
+  level: "INFO"
+  save_logs: true
+  log_dir: "logs/pipeline"
+  
+# Metrics database
+metrics:
+  enabled: true
+  db_path: "logs/metrics.db"
+  export_json: true
+  json_path: "logs/metrics.json"
+
+# Model saving
+model_saving:
+  save_best_only: true
+  save_intermediate: false
+  models_dir: "models"
+
+# Notification (placeholder for future)
+notifications:
+  enabled: false
+  email: null
+  webhook: null

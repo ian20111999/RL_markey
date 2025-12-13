@@ -22,12 +22,58 @@ coverage.xml
 dist/
 build/
 
-# VS Code
+# IDE
 .vscode/
 *.code-workspace
-
-# IDE
 .idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Training outputs
+runs/*/
+!runs/.gitkeep
+logs/*.log
+plots/*.png
+
+# Models (large files)
+models/*.zip
+models/*.pkl
+!models/*.json
+!models/.gitkeep
+
+# Data files (large)
+data/*.csv
+data/*.parquet
+!data/.gitkeep
+!data/btc_usdt_1m_2023.csv
+
+# Reports
+*.html
+!docs/*.html
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*.orig
+.ipynb_checkpoints/
+
+# Optuna
+*.db
+
+# Production - Model Registry
+models/registry/models/
+!models/registry/registry.json
+models/leaderboard.csv
+
+# Production - Templates
+production/templates/
 *.swp
 *.swo
 

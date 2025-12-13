@@ -5,28 +5,95 @@ import shutil
 import json
 import yaml
 import time
-from pathlib import Path
 import random
+import pandas as pd
+from pathlib import Path
+
+def analyze_data_and_get_params(data_path):
+    """
+    智能分析數據，回傳適合該幣種的參數
+    """
+    print(f"   🔍 Analyzing data: {data_path.name}...")
+    try:
+        # 只讀前 10000 行來估算價格，節省時間
+        df = pd.read_csv(data_path, nrows=10000)
+        
+        # 假設 CSV 有 'close' 或 'Close' 欄位
+        price_col = 'close' if 'close' in df.columns else 'Close'
+        if price_col not in df.columns:
+            # 嘗試用第 4 欄 (通常是 Close)
+            avg_price = df.iloc[:, 4].mean()
+        else:
+            avg_price = df[price_col].mean()
+            
+        print(f"   💡 Average Price: {avg_price:.2f}")
+        
+        # === 自動參數計算邏輯 ===
+        
+        # 1. Base Spread: 設定為價格的 0.05% (5 bps)
+        # BTC(100k) -> 50, ETH(3k) -> 1.5
+        base_spread = avg_price * 0.0005
+        
+        # 2. Initial Cash: 足夠買 10 顆的資金
+        initial_cash = avg_price * 10.0
+        
+        # 3. Reward Scale: 根據價格動態調整，目標讓 PnL 獎勵落在合理範圍
+        # 價格越高，PnL 數字越大，所以 scale 要越小
+        # 基準：BTC(100k) 用 1e-6
+        reward_scale = 1.0e-6 * (100000.0 / avg_price)
+        
+        params = {
+            'base_spread': float(base_spread),
+            'initial_cash': float(initial_cash),
+            'reward_scale': float(reward_scale)
+        }
+        
+        print(f"   ⚙️  Auto-Tuned Params: Spread={base_spread:.4f}, Cash={initial_cash:.0f}, Scale={reward_scale:.2e}")
+        return params
+        
+    except Exception as e:
+        print(f"   ⚠️  Analysis failed: {e}. Using default params.")
+        return {}
 
 def run_pipeline(symbol, data_dir="data", max_retries=3):
     print(f"🚀 Starting Pipeline for {symbol}...")
     
     # 1. Setup Paths
     project_root = Path(__file__).parent
-    data_path = project_root / data_dir / f"{symbol}_usdt_1m_2023.csv"
     
-    # Fallback for generic naming if specific not found
-    if not data_path.exists():
-        # Try finding any csv with symbol
-        candidates = list((project_root / data_dir).glob(f"*{symbol}*.csv"))
-        if candidates:
-            data_path = candidates[0]
-            print(f"⚠️  Exact match not found, using: {data_path.name}")
-        else:
-            print(f"❌ Data file for {symbol} not found in {data_dir}/")
+    # Check if data exists, if not, try to fetch it
+    candidates = list((project_root / data_dir).glob(f"*{symbol}*.csv"))
+    
+    if not candidates:
+        print(f"⚠️  Data file for {symbol} not found in {data_dir}/. Attempting to download...")
+        
+        # Construct fetch command
+        # Assuming symbol is like 'btc' or 'eth', convert to 'BTCUSDT' for Binance
+        binance_symbol = f"{symbol.upper()}USDT"
+        fetch_cmd = [
+            sys.executable, "scripts/fetch_data.py",
+            "--symbol", binance_symbol,
+            "--interval", "1m",
+            "--year", "2023",
+            "--output_dir", str(project_root / data_dir)
+        ]
+        
+        try:
+            subprocess.run(fetch_cmd, check=True)
+            # Re-check for file
+            candidates = list((project_root / data_dir).glob(f"*{symbol}*.csv"))
+            if not candidates:
+                print(f"❌ Failed to download data for {symbol}.")
+                sys.exit(1)
+        except subprocess.CalledProcessError:
+            print(f"❌ Error executing data fetch script.")
             sys.exit(1)
             
-    print(f"✅ Data found: {data_path}")
+    data_path = candidates[0]
+    print(f"✅ Data found: {data_path.name}")
+    
+    # === 新增：智能分析數據 ===
+    auto_params = analyze_data_and_get_params(data_path)
     
     # 2. Loop for Retries
     best_pnl = -float('inf')
@@ -46,7 +113,15 @@ def run_pipeline(symbol, data_dir="data", max_retries=3):
         with open(config_template, 'r') as f:
             config = yaml.safe_load(f)
             
+        # === 注入動態參數 ===
         config['env']['data_file'] = str(data_path.relative_to(project_root))
+        
+        if auto_params:
+            config['env']['base_spread'] = auto_params['base_spread']
+            config['env']['initial_cash'] = auto_params['initial_cash']
+            # 如果 config 裡有 reward 設定，也更新它
+            if 'reward' in config:
+                config['reward']['reward_scale'] = auto_params['reward_scale']
         
         config_path = run_dir / "config.yaml"
         with open(config_path, 'w') as f:
