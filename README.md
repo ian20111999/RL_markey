@@ -1,6 +1,41 @@
 # RL Market Making
 
-使用強化學習（Reinforcement Learning）進行加密貨幣做市策略訓練的完整框架。
+<div align="center">
+
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Stable-Baselines3](https://img.shields.io/badge/SB3-2.0+-green.svg)](https://stable-baselines3.readthedocs.io/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-009688.svg)](https://fastapi.tiangolo.com/)
+
+**完整的端到端強化學習做市交易系統**
+
+使用強化學習（Reinforcement Learning）進行加密貨幣做市策略訓練與生產部署
+
+[快速開始](#-快速開始) •
+[功能特色](#-專案概述) •
+[文檔](#-詳細文檔) •
+[生產部署](#-生產級部署功能)
+
+</div>
+
+---
+
+## 📑 目錄
+
+- [專案概述](#-專案概述)
+- [生產級部署功能](#-生產級部署功能)
+- [專案結構](#-專案結構)
+- [快速開始](#-快速開始)
+- [主要功能](#-主要功能)
+- [配置說明](#-配置說明)
+- [評估指標](#-評估指標)
+- [進階使用](#-進階使用)
+- [專案開發階段](#-專案開發階段-development-phases)
+- [詳細文檔](#-詳細文檔)
+- [Docker 部署](#-docker-部署)
+- [License](#-license)
+
+---
 
 ## 🎯 專案概述
 
@@ -40,11 +75,52 @@ python production/dashboard.py
 # 訪問 http://localhost:8080
 ```
 
-詳細文檔請查看：
-- **[快速開始指南](docs/QUICKSTART.md)** - 5分鐘快速上手
-- **[生產部署指南](docs/PRODUCTION_GUIDE.md)** - 完整部署文檔（英文）
-- **[用戶使用指南](docs/USER_GUIDE_ZH.md)** - 詳細使用說明（中文）
-- **[功能總結](PRODUCTION_SUMMARY.md)** - 生產級功能完整總結
+## 📚 詳細文檔
+
+| 文檔 | 說明 |
+|------|------|
+| **[PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)** | 完整專案組織、架構與最佳實踐 |
+| **[DEVELOPMENT.md](DEVELOPMENT.md)** | 開發者指南、貢獻規範與調試技巧 |
+| **[CHANGELOG.md](CHANGELOG.md)** | 版本更新歷史與升級指南 |
+| **[docs/QUICKSTART.md](docs/QUICKSTART.md)** | 5分鐘快速上手教程 |
+| **[docs/PRODUCTION_GUIDE.md](docs/PRODUCTION_GUIDE.md)** | 生產環境部署指南（英文） |
+| **[docs/USER_GUIDE_ZH.md](docs/USER_GUIDE_ZH.md)** | 詳細使用說明（中文） |
+| **[PRODUCTION_SUMMARY.md](PRODUCTION_SUMMARY.md)** | 生產級功能完整總結 |
+
+---
+
+## 🐳 Docker 部署
+
+### 快速啟動
+
+```bash
+# 1. 使用 Docker Compose 一鍵啟動
+docker-compose up -d
+
+# 2. 檢查服務狀態
+docker-compose ps
+
+# 3. 查看日誌
+docker-compose logs -f
+
+# 4. 訪問服務
+# API: http://localhost:8000
+# 文檔: http://localhost:8000/docs
+# 健康檢查: http://localhost:8000/health
+```
+
+### 手動構建
+
+```bash
+# 構建映像
+docker build -t rl-market-making .
+
+# 運行容器
+docker run -d -p 8000:8000 \
+  -v $(pwd)/models:/app/models \
+  -v $(pwd)/data:/app/data \
+  rl-market-making
+```
 
 ---
 
@@ -312,8 +388,61 @@ report = (
 
 ## 📝 License
 
-MIT License
+MIT License - 詳見 [LICENSE](LICENSE) 文件
+
+---
 
 ## 🤝 Contributing
 
 歡迎提交 Issue 和 Pull Request！
+
+### 貢獻指南
+
+1. **Fork 本專案**
+2. **創建您的特性分支** (`git checkout -b feature/AmazingFeature`)
+3. **提交您的改動** (`git commit -m 'Add some AmazingFeature'`)
+4. **推送到分支** (`git push origin feature/AmazingFeature`)
+5. **開啟 Pull Request**
+
+### 開發規範
+
+- 遵循 PEP 8 代碼風格
+- 為新功能添加測試
+- 更新相關文檔
+- 確保所有測試通過
+
+---
+
+## 🙏 Acknowledgements
+
+本專案使用以下優秀的開源項目：
+
+- [Stable-Baselines3](https://stable-baselines3.readthedocs.io/) - RL 演算法實現
+- [Gymnasium](https://gymnasium.farama.org/) - RL 環境標準
+- [FastAPI](https://fastapi.tiangolo.com/) - 生產 API 框架
+- [PyTorch](https://pytorch.org/) - 深度學習框架
+
+---
+
+## 📧 Contact
+
+如有問題或建議，請透過以下方式聯繫：
+
+- 提交 [GitHub Issue](https://github.com/ian20111999/RL_markey/issues)
+- Email: [專案維護者郵箱]
+
+---
+
+## ⭐ Star History
+
+如果這個專案對您有幫助，請給它一個 ⭐ Star！
+
+---
+
+<div align="center">
+
+**Made with ❤️ by RL Market Making Team**
+
+[回到頂部](#rl-market-making)
+
+</div>
