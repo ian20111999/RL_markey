@@ -310,7 +310,8 @@ def calculate_profitability_score(metrics: ModelMetrics) -> float:
     - Max Drawdown (inverted): 20%
     """
     # Normalize metrics to 0-100 scale
-    pnl_score = min(100, max(0, metrics.mean_pnl / 100 * 100))  # Assume 100 is excellent
+    EXCELLENT_PNL = 100.0  # Define what PnL value is considered excellent
+    pnl_score = min(100, max(0, metrics.mean_pnl / EXCELLENT_PNL * 100))
     win_rate_score = metrics.win_rate * 100
     sharpe_score = min(100, max(0, metrics.sharpe_ratio / 3.0 * 100))  # 3.0 is excellent
     drawdown_score = max(0, (1 - metrics.max_drawdown) * 100)  # Lower is better

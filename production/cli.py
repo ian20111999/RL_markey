@@ -225,7 +225,9 @@ class ProductionCLI:
         sharpe_ratio = mean_pnl / std_pnl if std_pnl > 0 else 0
         
         # Estimate max drawdown (conservative)
-        max_drawdown = min(0.5, std_pnl / max(abs(mean_pnl), 1))
+        MAX_DRAWDOWN_ESTIMATE = 0.5
+        MIN_PNL_DENOMINATOR = 1.0
+        max_drawdown = min(MAX_DRAWDOWN_ESTIMATE, std_pnl / max(abs(mean_pnl), MIN_PNL_DENOMINATOR))
         
         metrics = ModelMetrics(
             mean_pnl=mean_pnl,

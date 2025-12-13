@@ -40,8 +40,19 @@ app = FastAPI(
 # Initialize model registry
 registry = ModelRegistry()
 
-# Global model cache
+# Global model cache with size limit
+MAX_CACHED_MODELS = 10
 _loaded_models = {}
+
+
+def _manage_model_cache(model_id: str):
+    """Manage model cache to prevent unbounded growth"""
+    if len(_loaded_models) >= MAX_CACHED_MODELS and model_id not in _loaded_models:
+        # Remove oldest cached model (simple FIFO strategy)
+        oldest_key = next(iter(_loaded_models))
+        del _loaded_models[oldest_key]
+        print(f"Cache limit reached, removed model: {oldest_key}")
+
 
 
 class PredictionRequest(BaseModel):
@@ -83,6 +94,9 @@ def load_model(model_id: str) -> SAC:
     """Load a model from registry with caching"""
     if model_id in _loaded_models:
         return _loaded_models[model_id]
+    
+    # Manage cache size before adding new model
+    _manage_model_cache(model_id)
     
     model_path = registry.get_model_path(model_id)
     if not model_path or not model_path.exists():

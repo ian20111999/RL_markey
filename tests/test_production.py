@@ -90,7 +90,7 @@ def test_model_registration(temp_registry, sample_metrics, tmp_path):
     metadata = temp_registry.get_model_metadata(model_id)
     assert metadata is not None
     assert metadata.algorithm == "SAC"
-    assert metadata.production_ready == True  # Good metrics
+    assert metadata.production_ready is True  # Good metrics
     assert metadata.metrics.mean_pnl == 150.0
 
 
