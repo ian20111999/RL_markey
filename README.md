@@ -18,6 +18,9 @@
 
 </div>
 
+> 📢 **重要更新**: 本專案已完成分支整合與全面優化！所有功能已統一至 main 分支，並提供完整的生產級部署方案。  
+> 詳見 [優化總結](OPTIMIZATION_SUMMARY.md)
+
 ---
 
 ## 📑 目錄
@@ -79,6 +82,7 @@ python production/dashboard.py
 
 | 文檔 | 說明 |
 |------|------|
+| **[OPTIMIZATION_SUMMARY.md](OPTIMIZATION_SUMMARY.md)** | 🆕 專案整合與優化完成報告 |
 | **[PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)** | 完整專案組織、架構與最佳實踐 |
 | **[DEVELOPMENT.md](DEVELOPMENT.md)** | 開發者指南、貢獻規範與調試技巧 |
 | **[CHANGELOG.md](CHANGELOG.md)** | 版本更新歷史與升級指南 |
