@@ -21,7 +21,7 @@ This guide will help you deploy the RL Market Making system as a production-read
 pip install -r requirements.txt
 
 # Production dependencies
-pip install -r requirements-production.txt
+# All dependencies are now consolidated in requirements.txt
 ```
 
 ### 2. Train Your First Profitable Model

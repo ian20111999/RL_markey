@@ -34,7 +34,7 @@
 
 ```bash
 pip install -r requirements.txt
-pip install -r requirements-production.txt
+# All dependencies are now consolidated in requirements.txt
 ```
 
 ### 步驟 2: 訓練第一個模型

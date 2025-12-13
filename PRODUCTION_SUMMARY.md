@@ -182,7 +182,7 @@ Shows API interaction:
 ```bash
 # 1. Install
 pip install -r requirements.txt
-pip install -r requirements-production.txt
+# All dependencies are now consolidated in requirements.txt
 
 # 2. Train
 python production/cli.py train --symbol btc --attempts 3
@@ -403,7 +403,7 @@ RL_markey/
 │
 ├── Dockerfile              # Container image
 ├── docker-compose.yml      # Easy deployment
-├── requirements-production.txt
+# All production dependencies are in requirements.txt
 └── .dockerignore
 ```
 

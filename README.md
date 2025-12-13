@@ -26,9 +26,8 @@
 ### 快速開始（生產環境）
 
 ```bash
-# 1. 安裝依賴
+# 1. 安裝依賴（包含所有生產環境所需套件）
 pip install -r requirements.txt
-pip install -r requirements-production.txt
 
 # 2. 訓練一個可獲利的模型（自動重試）
 python production/cli.py train --symbol btc --attempts 3

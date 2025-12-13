@@ -21,7 +21,7 @@ cd RL_markey
 
 # Install dependencies
 pip install -r requirements.txt
-pip install -r requirements-production.txt
+# All dependencies are now consolidated in requirements.txt
 ```
 
 ---
