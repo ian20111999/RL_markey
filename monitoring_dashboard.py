@@ -242,7 +242,7 @@ def main():
     parser.add_argument(
         "--port",
         type=int,
-        default=5000,
+        default=5556,
         help="API server port"
     )
     

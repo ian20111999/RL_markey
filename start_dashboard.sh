@@ -25,7 +25,7 @@ case $choice in
         echo "✅ 啟動增強版儀表板..."
         echo "📍 訪問: http://localhost:5556"
         echo ""
-        python monitoring_dashboard.py --server
+        python monitoring_dashboard.py --mode server
         ;;
     3)
         echo ""
