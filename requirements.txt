@@ -32,12 +32,21 @@ python-multipart>=0.0.6
 flask>=2.3.0
 flask-cors>=4.0.0
 
+# Database - PostgreSQL Support
+psycopg2-binary>=2.9.9
+sqlalchemy>=2.0.23
+alembic>=1.13.0
+
+# Environment & Configuration
+python-dotenv>=1.0.0
+
 # Development & Testing
 tqdm>=4.65.0
 pytest>=7.0.0
 
 # Performance Optimization
 numba>=0.58.0  # JIT compilation for numerical functions (10-50x speedup)
+psutil>=5.9.0  # System and process monitoring
 
 # Optional: PDF Report Generation (uncomment if needed)
 # weasyprint>=59.0

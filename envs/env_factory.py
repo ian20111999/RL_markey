@@ -8,8 +8,8 @@ from typing import Optional, Dict, Any
 import pandas as pd
 from pydantic import ValidationError
 
-from envs.market_making_env_v2 import (
-    MarketMakingEnvV2,
+from envs.market_making_env import (
+    MarketMakingEnv,
     RewardConfig,
     ObservationConfig,
     ActionConfig,
@@ -27,7 +27,7 @@ def create_env_from_config(
     csv_path: Optional[str] = None,
     df: Optional[pd.DataFrame] = None,
     override_params: Optional[Dict[str, Any]] = None,
-) -> MarketMakingEnvV2:
+) -> MarketMakingEnv:
     """從 YAML 配置檔案創建環境
     
     Args:
@@ -37,7 +37,7 @@ def create_env_from_config(
         override_params: 覆蓋配置的參數（例如 {'episode_length': 2000}）
     
     Returns:
-        MarketMakingEnvV2 實例
+        MarketMakingEnv 實例
     
     Example:
         >>> env = create_env_from_config(
@@ -134,14 +134,14 @@ def create_env_from_config(
     # 移除 None 值
     env_params = {k: v for k, v in env_params.items() if v is not None}
     
-    return MarketMakingEnvV2(**env_params)
+    return MarketMakingEnv(**env_params)
 
 
 def create_env_simple(
     csv_path: Optional[str] = None,
     df: Optional[pd.DataFrame] = None,
     **kwargs
-) -> MarketMakingEnvV2:
+) -> MarketMakingEnv:
     """快速創建環境（使用預設配置）
     
     Args:
@@ -150,7 +150,7 @@ def create_env_simple(
         **kwargs: 其他環境參數（會覆蓋預設值）
     
     Returns:
-        MarketMakingEnvV2 實例
+        MarketMakingEnv 實例
     
     Example:
         >>> env = create_env_simple(
@@ -159,7 +159,7 @@ def create_env_simple(
         ...     max_inventory=10.0
         ... )
     """
-    return MarketMakingEnvV2(
+    return MarketMakingEnv(
         csv_path=csv_path,
         df=df,
         **kwargs

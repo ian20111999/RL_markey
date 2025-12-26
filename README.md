@@ -1,494 +1,32 @@
-# RL Market Making
+# RL Market - 強化學習交易系統
 
-<div align="center">
+基於強化學習（Reinforcement Learning）的加密貨幣交易系統，支援完整的訓練、回測、評估和生產部署。
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Stable-Baselines3](https://img.shields.io/badge/SB3-2.0+-green.svg)](https://stable-baselines3.readthedocs.io/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-009688.svg)](https://fastapi.tiangolo.com/)
-
-**完整的端到端強化學習做市交易系統**
-
-使用強化學習（Reinforcement Learning）進行加密貨幣做市策略訓練與生產部署
-
-[快速開始](#-快速開始推薦) •
-[生產部署](#-生產級部署功能) •
-[文檔](#-詳細文檔) •
-[Docker](#-docker-部署)
-
-</div>
-
-> 📢 **重要更新**: 本專案已完成全面優化！現包含生產級部署功能、完整文檔體系和 Docker 支援。
-> 詳見 [優化總結](OPTIMIZATION_SUMMARY.md) | [專案結構](PROJECT_STRUCTURE.md)
+> 📖 **詳細文件**:
+> - [專案結構說明](PROJECT_STRUCTURE.md) - 完整目錄結構和檔案說明
+> - [清理建議](CLEANUP_GUIDE.md) - 資料清理和優化建議
 
 ---
 
-## 🎯 專案概述
+## 🚀 快速開始
 
-本專案實現了一個端到端的 RL 做市交易系統，包含：
-
-### 核心功能
-- **🚀 全自動化 Pipeline**：自動下載數據、調參、訓練、評估
-- **🎯 智能參數調整**：根據不同幣種價格自動優化參數
-- **🔄 自動重試機制**：失敗自動重訓，確保獲得可用模型
-- **📊 多幣種支援**：一鍵訓練任何加密貨幣對
-- **🤖 多演算法支援**：SAC（預設）、PPO、TD3
-- **🔬 進階環境設計**：真實成交模型、Domain Randomization
-- **📈 完整評估指標**：PnL、Sharpe Ratio、Win Rate、Max Drawdown
-
-### 🆕 生產級部署功能
-
-現在包含完整的生產環境支援，讓任何人都能輕鬆產出穩定且可獲利的模型：
-
-- **🤖 自動化訓練 CLI**：一鍵訓練可獲利模型（自動重試直到成功）
-- **📊 模型註冊系統**：自動追蹤所有模型的性能指標與版本
-- **🌐 REST API**：生產級 FastAPI 用於模型推論和管理
-- **📈 Web 監控面板**：視覺化模型性能和系統健康狀態
-- **🐳 Docker 支援**：一鍵容器化部署
-- **✅ 自動驗證**：只有通過盈利標準的模型才會被標記為「生產就緒」
-
-## ⚡ 快速開始（推薦）
-
-### 最簡單的方式（單個模型訓練）
+### 基本訓練
 
 ```bash
 # 1. 安裝依賴
 pip install -r requirements.txt
 
-# 2. 直接訓練（會自動下載數據）
+# 2. 訓練模型
 python pipeline.py --symbol btc
-python pipeline.py --symbol eth
-python pipeline.py --symbol sol
 
 # 3. 查看結果
-# 最佳模型會自動保存到 models/{symbol}_best_model.zip
+# 模型保存在 models/{symbol}_best_model.zip
 ```
 
-**就是這麼簡單！** Pipeline 會自動處理：
-- ✅ 檢查並下載缺失的歷史數據（從 Binance）
-- ✅ 分析數據並自動調整參數（spread, cash, reward_scale）
-- ✅ 訓練模型（最多重試 3 次）
-- ✅ Out-of-Sample 評估
-- ✅ 只保存盈利模型（PnL > 0 且 WinRate >= 50%）
-
-### 🚀 生產級快速開始（推薦進階用戶）
-
-使用生產級 CLI 工具，自動重試直到獲得可獲利模型：
+### Docker 部署
 
 ```bash
-# 1. 訓練一個可獲利的模型（自動重試）
-python production/cli.py train --symbol btc --attempts 5
-
-# 2. 查看所有訓練的模型
-python production/cli.py list --filter production
-
-# 3. 查看最佳模型
-python production/cli.py best --symbol btc
-
-# 4. 啟動生產 API
-python production/cli.py serve --port 8000
-
-# 5. 查看監控面板
-python production/dashboard.py
-# 訪問 http://localhost:8080
-```
-
-### 🐳 Docker 快速部署
-
-```bash
-# 使用 Docker Compose 一鍵部署
-docker-compose up -d
-
-# API 將運行在 http://localhost:8000
-# 監控面板將運行在 http://localhost:8080
-```
-
-📖 **詳細文檔**：
-
-| 文檔類型 | 文件 | 說明 |
-|---------|------|------|
-| **快速開始** | [QUICKSTART.md](QUICKSTART.md) | 5 分鐘快速上手指南 |
-| **生產部署** | [docs/PRODUCTION_GUIDE.md](docs/PRODUCTION_GUIDE.md) | 生產環境完整部署指南（英文） |
-| **使用手冊** | [docs/USER_GUIDE_ZH.md](docs/USER_GUIDE_ZH.md) | 詳細使用說明（中文） |
-| **專案結構** | [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) | 完整專案組織與架構說明 |
-| **開發指南** | [DEVELOPMENT.md](DEVELOPMENT.md) | 開發者貢獻指南與調試技巧 |
-| **更新日誌** | [CHANGELOG.md](CHANGELOG.md) | 版本更新歷史 |
-| **優化總結** | [OPTIMIZATION_SUMMARY.md](OPTIMIZATION_SUMMARY.md) | 專案整合與優化報告 |
-| **配置指南** | [CONFIG_GUIDE.md](CONFIG_GUIDE.md) | 配置文件詳細說明 |
-| **企業系統** | [SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md) | 進階功能完整說明 |
-| **生產總結** | [INTEGRATED_PIPELINE_README.md](INTEGRATED_PIPELINE_README.md) | 企業級多幣種系統 |
-
----
-
-## 📁 專案結構
-
-```
-RL_markey/
-├── pipeline.py                 # 🎯 主要入口（推薦使用）
-├── configs/
-│   ├── default.yaml           # 預設配置模板
-│   └── pipeline_config.yaml   # Pipeline 配置
-│
-├── data/                       # 數據目錄（自動下載）
-│   ├── btc_usdt_1m_2023.csv
-│   └── eth_usdt_1m_2023.csv
-│
-├── envs/                       # 交易環境
-│   ├── market_making_env.py   # 主環境（V3 穩定版）
-│   ├── realistic_fill_model.py # 真實成交模擬
-│   ├── config_schema.py       # 配置定義
-│   └── constants.py           # 常數定義
-│
-├── scripts/                    # 核心腳本
-│   ├── fetch_data.py          # 數據下載（自動調用）
-│   ├── train.py               # 訓練腳本
-│   ├── evaluate.py            # 評估腳本
-│   └── visualize_episode.py   # 可視化
-│
-├── utils/                      # 工具函數
-│   ├── validators.py          # 數據驗證
-│   ├── production_checker.py  # 生產就緒檢查
-│   ├── metrics.py             # 評估指標
-│   ├── numba_optimizations.py # 性能優化
-│   └── ...                    # 其他進階工具
-│
-├── models/                     # 訓練完成的模型
-│   ├── btc_best_model.zip
-│   └── eth_best_model.zip
-│
-├── runs/                       # 訓練記錄
-│   └── run_xxx_timestamp/
-│       ├── config.yaml
-│       ├── best_model/
-│       └── evaluation_results.json
-│
-└── [進階系統]                  # 可選的企業級功能
-    ├── integrated_pipeline.py  # 多幣種批量訓練
-    ├── auto_pipeline.py        # 完整自動化系統
-    ├── web_dashboard.py        # Web 監控介面
-    └── production/             # 🆕 生產級部署工具
-        ├── cli.py              # 命令行工具
-        ├── api.py              # REST API 服務
-        ├── model_registry.py   # 模型註冊系統
-        └── dashboard.py        # 監控面板
-```
-
----
-
-## 🎯 生產級功能詳解
-
-### 1. 自動化訓練 CLI
-
-```bash
-# 訓練直到獲得可獲利模型（自動重試）
-python production/cli.py train --symbol btc --attempts 5
-
-# 查看所有模型
-python production/cli.py list
-
-# 只顯示生產就緒的模型
-python production/cli.py list --filter production
-
-# 查看特定幣種的最佳模型
-python production/cli.py best --symbol eth
-
-# 導出排行榜
-python production/cli.py leaderboard --output leaderboard.json
-```
-
-### 2. 模型註冊系統
-
-自動追蹤所有訓練的模型：
-- 📊 性能指標（PnL、勝率、Sharpe、回撤等）
-- 🏷️ 自動版本控制
-- ✅ 生產就緒驗證（5 項標準）
-- 📈 盈利能力評分（0-100）
-
-**生產標準**：
-1. 正 PnL
-2. 勝率 ≥ 50%
-3. Sharpe Ratio ≥ 0.5
-4. 最大回撤 ≤ 30%
-5. 平均交易數 ≥ 10
-
-### 3. REST API 服務
-
-```bash
-# 啟動 API 服務
-python production/cli.py serve --port 8000
-
-# 或直接運行
-uvicorn production.api:app --host 0.0.0.0 --port 8000
-```
-
-**API 端點**：
-- `GET /health` - 健康檢查
-- `GET /models` - 列出所有模型
-- `GET /models/best/{symbol}` - 獲取最佳模型
-- `POST /predict` - 模型推論
-- `GET /stats` - 系統統計
-
-訪問 API 文檔：http://localhost:8000/docs
-
-### 4. Web 監控面板
-
-```bash
-python production/dashboard.py
-```
-
-訪問 http://localhost:8080 查看：
-- 即時系統統計
-- 最佳模型展示
-- 性能排行榜
-- 模型版本追蹤
-
----
-
-## 🚀 使用指南
-
-### 基本使用
-
-```bash
-# 訓練單一幣種
-python pipeline.py --symbol btc
-
-# 設定重試次數（預設 3 次）
-python pipeline.py --symbol eth --retries 5
-```
-
-### Pipeline 自動執行流程
-
-1. **數據檢查**：檢查 `data/{symbol}_usdt_1m_2023.csv` 是否存在
-2. **自動下載**：如果缺失，從 Binance Vision 下載完整 2023 年數據
-3. **智能分析**：分析前 10k 行數據，計算平均價格
-4. **參數調整**：
-   - `base_spread` = 價格 × 0.05%
-   - `initial_cash` = 價格 × 10
-   - `reward_scale` = 動態調整（確保獎勵數值穩定）
-5. **訓練循環**（最多 3 次）：
-   - 訓練 200k timesteps (SAC 算法)
-   - Out-of-Sample 評估（20 episodes）
-   - 如果 PnL > 0 且 WinRate >= 50%，保存模型並結束
-   - 否則使用新 seed 重訓
-6. **結果保存**：最佳模型 → `models/{symbol}_best_model.zip`
-
-### 訓練結果範例
-
-```
-🏆 Best Run: run_eth_1765516821_v3 (PnL: $6.14)
-   Mean PnL:       +6.14 ± 55.24
-   Win Rate:       60.0% (12/20)
-   Total PnL:      +122.78
-   💾 Saved to: models/eth_best_model.zip
-```
-
----
-
-## 🔧 主要功能
-
-### 🤖 核心功能
-
-| 功能 | 說明 |
-|------|------|
-| **自動數據下載** | 從 Binance Vision 自動下載完整歷史數據 |
-| **智能參數調整** | 根據價格自動計算 spread, cash, reward_scale |
-| **自動重試** | 失敗自動使用不同 seed 重訓（最多 3 次） |
-| **質量控制** | 只保存盈利且勝率 ≥ 50% 的模型 |
-| **多幣種支援** | 支援任何 Binance 上的 USDT 交易對 |
-
-### 📊 環境特性
-
-- **真實成交模擬**：排隊位置、部分成交、滑點模擬
-- **多維觀察空間**：價格、庫存、波動率、動量、成交量、趨勢
-- **Shaped Reward**：帶有 inventory 懲罰、turnover 懲罰的獎勵塑造
-- **Domain Randomization**：費率、spread 隨機化增強泛化
-- **動態持倉限制**：根據市況動態調整持倉上限
-
-### 🎯 訓練算法
-
-| 演算法 | 適用場景 | 特點 |
-|--------|----------|------|
-| **SAC** | 連續動作空間（預設） | 樣本效率高、自動探索調整 |
-| **PPO** | 通用場景 | 穩定、易調參（尚未集成） |
-| **TD3** | 連續動作空間 | 減少過估計（尚未集成） |
-
-### 📊 評估指標
-
-| 指標 | 說明 |
-|------|------|
-| **Mean PnL** | 每個 episode 的平均損益 |
-| **Win Rate** | 獲利 episode 的比例 |
-| **Total PnL** | 所有 episode 的總損益 |
-| **Sharpe Ratio** | 風險調整後報酬（未來） |
-| **Max Drawdown** | 最大回撤（未來） |
-
----
-
-## 📝 配置說明
-
-主要配置檔：`configs/default.yaml`
-
-### 快速調整指南
-
-```yaml
-# 調整持倉限制
-env:
-  max_inventory: 2.0          # 減少風險：1.0，增加利潤：5.0
-
-# 調整庫存懲罰
-reward:
-  lambda_inventory: 20.0      # 預設 20.0，更保守：50.0
-  lambda_turnover: 0.01       # 防止過度交易
-
-# 調整學習率
-train:
-  learning_rate: 0.00003      # 不穩定：降低至 1e-5
-  batch_size: 256             # RAM 不足：降低至 128
-```
-
-📖 **完整配置文檔**：查看 [CONFIG_GUIDE.md](CONFIG_GUIDE.md) 獲取詳細說明和最佳實踐。
-
----
-
-## 🔍 進階使用
-
-### 系統架構對比
-
-本專案包含兩個主要系統：
-
-| 系統 | 適用場景 | 入口檔案 | 特點 |
-|------|----------|----------|------|
-| **簡化 Pipeline** | 個人使用、快速實驗 | `pipeline.py` | ✅ 簡單、快速<br>✅ 自動下載數據<br>✅ 自動調參 |
-| **企業級系統** | 批量訓練、生產部署 | `integrated_pipeline.py` | ✅ 多幣種並行<br>✅ Web 監控<br>✅ 指標追蹤<br>✅ 生產就緒檢查 |
-
-**推薦新手使用 `pipeline.py`**，等熟悉後再探索企業級功能。
-
-### 使用企業級系統
-
-```bash
-# 批量訓練多個幣種
-python integrated_pipeline.py --symbols btc eth bnb sol
-
-# 啟動 Web 監控介面
-python web_dashboard.py
-# 瀏覽器打開 http://localhost:5000
-
-# 使用自定義配置
-python integrated_pipeline.py --symbols btc --config configs/pipeline_config.yaml
-```
-
-📖 **詳細文檔**：[INTEGRATED_PIPELINE_README.md](INTEGRATED_PIPELINE_README.md)
-
----
-
-### 自定義訓練
-
-如果你想完全控制訓練流程：
-
-```python
-import yaml
-from pathlib import Path
-from stable_baselines3 import SAC
-from envs.market_making_env import MarketMakingEnv
-
-# 1. 載入配置
-with open('configs/default.yaml', 'r') as f:
-    config = yaml.safe_load(f)
-
-# 2. 創建環境
-env = MarketMakingEnv(
-    csv_path="data/btc_usdt_1m_2023.csv",
-    **config['env']
-)
-
-# 3. 創建模型
-model = SAC(
-    "MlpPolicy", 
-    env,
-    learning_rate=config['train']['learning_rate'],
-    batch_size=config['train']['batch_size'],
-    verbose=1
-)
-
-# 4. 訓練
-model.learn(total_timesteps=200000)
-
-# 5. 保存
-model.save("my_custom_model")
-```
-
-### 使用訓練好的模型
-
-```python
-from stable_baselines3 import SAC
-
-# 載入模型
-model = SAC.load("models/btc_best_model.zip")
-
-# 預測動作
-obs = env.reset()
-for _ in range(1000):
-    action, _ = model.predict(obs, deterministic=True)
-    obs, reward, done, info = env.step(action)
-    if done:
-        break
-```
-
----
-
-## 📅 專案開發歷程
-
-### 現狀：完整生產級系統 ✅
-
-目前專案包含兩套系統：
-
-#### 1. 簡化版 Pipeline（`pipeline.py`）
-適合個人使用和快速實驗：
-- ✅ 自動數據下載
-- ✅ 智能參數調整
-- ✅ 自動重試機制
-- ✅ 質量控制（只保存盈利模型）
-- ✅ 多幣種支援
-
-#### 2. 生產級系統（`production/`）
-適合企業部署和批量訓練：
-- ✅ 自動化訓練 CLI
-- ✅ 模型註冊與版本管理
-- ✅ REST API 服務
-- ✅ Web 監控面板
-- ✅ Docker 容器化部署
-- ✅ 自動化測試
-
-### 核心特點
-
-1. **環境版本**：`envs/market_making_env.py` (V3 穩定版)
-   - Shaped Reward 與庫存懲罰
-   - 動態持倉限制
-   - 真實成交模擬（可選）
-
-2. **訓練算法**：SAC (Soft Actor-Critic)
-   - 樣本效率高
-   - 自動探索調整
-   - 適合連續動作空間
-
-3. **驗證結果**：
-   - BTC: 訓練成功，PnL +$3027, WinRate 60%
-   - ETH: 訓練成功，PnL +$6.14, WinRate 60%
-
-4. **生產功能**：
-   - ✅ 模型註冊系統
-   - ✅ REST API 服務
-   - ✅ Web 監控面板
-   - ✅ Docker 部署支援
-
----
-
-## 🐳 Docker 部署
-
-### 快速啟動
-
-```bash
-# 使用 Docker Compose 一鍵部署
+# 啟動所有服務（PostgreSQL + Dashboards）
 docker-compose up -d
 
 # 查看服務狀態
@@ -496,88 +34,578 @@ docker-compose ps
 
 # 查看日誌
 docker-compose logs -f
+```
 
-# 停止服務
+---
+
+## 📊 資料庫連接
+
+### 方式一：使用 Docker 內建的 pgAdmin（推薦）
+
+```bash
+# 1. 啟動 pgAdmin
+docker-compose up -d pgadmin
+
+# 2. 開啟瀏覽器訪問
+open http://localhost:5050
+```
+
+**登入資訊：**
+- Email: `admin@rlmarket.com`
+- Password: `admin`
+
+**新增 PostgreSQL Server：**
+1. 登入後，右鍵 **Servers** → **Register** → **Server**
+2. **General** 標籤：
+   - Name: `RL Market`
+3. **Connection** 標籤：
+   - Host: `postgres` ⬅️ 使用 Docker 服務名稱
+   - Port: `5432`
+   - Maintenance database: `postgres`
+   - Username: `rl_user`
+   - Password: `rl_password`
+   - ✅ Save password
+4. **Save** → 展開：**Servers → RL Market → Databases → rl_market → Schemas → public → Tables**
+
+### 方式二：本機 PostgreSQL 客戶端連接
+
+如果使用本機安裝的 pgAdmin 或其他工具（DBeaver, TablePlus）：
+
+- **Host**: `localhost` 或 `127.0.0.1`
+- **Port**: `5432`
+- **Database**: `rl_market`
+- **Username**: `rl_user`
+- **Password**: `rl_password`
+
+### 常用查詢
+
+```bash
+# 查看所有表
+docker-compose exec postgres psql -U rl_user -d rl_market -c "\dt"
+
+# 查看資料統計
+docker-compose exec postgres psql -U rl_user -d rl_market -c "
+SELECT 'symbols' as table, COUNT(*) FROM symbols
+UNION ALL SELECT 'training_runs', COUNT(*) FROM training_runs
+UNION ALL SELECT 'models', COUNT(*) FROM models;"
+
+# 查看訓練記錄
+docker-compose exec postgres psql -U rl_user -d rl_market -c "
+SELECT run_id, symbol, status, final_pnl FROM training_runs ORDER BY start_time DESC LIMIT 10;"
+```
+
+---
+
+## 🗄️ 資料庫架構
+
+系統使用 PostgreSQL 16，包含 8 個核心資料表：
+
+| 表名 | 說明 | 主要欄位 |
+|------|------|---------|
+| **symbols** | 交易對管理 | symbol, base_currency, quote_currency |
+| **market_data** | OHLCV 市場資料 | symbol_id, timestamp, open, high, low, close, volume |
+| **training_runs** | 訓練執行記錄 | run_id, symbol, algorithm, status, final_pnl |
+| **episodes** | Episode 詳細指標 | run_id, episode_num, reward, pnl, win_rate |
+| **models** | 模型資訊 | model_name, symbol, model_path, performance_metrics |
+| **backtest_runs** | 回測結果 | backtest_id, model_id, total_pnl, sharpe_ratio |
+| **trades** | 交易明細 | symbol_id, timestamp, side, price, quantity, pnl |
+| **system_logs** | 系統日誌 | timestamp, level, component, message |
+
+### 資料庫視圖
+
+- `v_latest_training_runs` - 最新訓練記錄
+- `v_symbol_performance` - 幣種表現統計
+- `v_model_leaderboard` - 模型排行榜
+- `v_market_data_stats` - 市場資料統計
+
+---
+
+## 📁 專案結構
+
+```
+RL_markey/
+├── README.md                      # 本文件
+├── pipeline.py                    # 基礎訓練流程
+├── integrated_pipeline.py         # 整合版 Pipeline
+├── auto_pipeline.py               # 自動化多幣種訓練
+├── docker-compose.yml             # Docker 配置
+├── requirements.txt               # Python 依賴
+│
+├── configs/                       # 配置檔案
+│   ├── default.yaml
+│   └── pipeline_config.yaml
+│
+├── envs/                          # 交易環境
+│   ├── market_making_env.py
+│   └── env_factory.py
+│
+├── utils/                         # 工具模組
+│   ├── database.py               # 資料庫抽象層
+│   ├── sqlite_db.py              # SQLite 實現
+│   ├── postgres_db.py            # PostgreSQL 實現
+│   ├── algorithms.py             # RL 演算法
+│   ├── backtesting.py            # 回測引擎
+│   └── metrics.py                # 指標計算
+│
+├── scripts/                       # 腳本工具
+│   ├── train.py                  # 訓練腳本
+│   ├── evaluate.py               # 評估腳本
+│   ├── fetch_data.py             # 資料獲取
+│   ├── init_db.sql               # PostgreSQL Schema
+│   └── init_db_sqlite.sql        # SQLite Schema
+│
+├── production/                    # 生產模組
+│   ├── api.py                    # RESTful API
+│   ├── cli.py                    # 命令列介面
+│   └── dashboard.py              # Dashboard
+│
+├── data/                          # 資料目錄
+├── models/                        # 模型目錄
+├── logs/                          # 日誌目錄
+│   └── metrics.db                # SQLite 資料庫（開發用）
+└── runs/                          # 訓練記錄
+```
+
+---
+
+## 🎯 核心功能
+
+### 1. 訓練系統
+
+#### 單一幣種訓練
+```bash
+python scripts/train.py --symbol BTCUSDT --algorithm PPO
+```
+
+#### 多幣種自動訓練
+```bash
+python auto_pipeline.py --symbols BTCUSDT ETHUSDT --version v2
+```
+
+#### 使用自定義配置
+```bash
+python scripts/train.py --symbol ETHUSDT --config configs/eth_best_config.yaml
+```
+
+### 2. 監控系統
+
+#### Streamlit Dashboard
+```bash
+streamlit run monitoring_dashboard.py
+# 訪問 http://localhost:8501
+```
+
+#### Flask Web Dashboard
+```bash
+python web_dashboard.py
+# 訪問 http://localhost:5000
+```
+
+#### Production Dashboard
+```bash
+python production/dashboard.py
+# 訪問 http://localhost:8080
+```
+
+### 3. 評估與回測
+
+```python
+from utils.backtesting import BacktestEngine
+
+engine = BacktestEngine(
+    model_path='models/ppo_btc_best.zip',
+    data_file='data/btc_usdt_1m_2023.csv'
+)
+
+results = engine.run()
+print(f"總回報: {results['total_return']:.2%}")
+print(f"夏普比率: {results['sharpe_ratio']:.2f}")
+```
+
+### 4. 生產 API
+
+```bash
+# 啟動 API Server
+python production/api.py
+
+# API 端點
+# GET  /api/models              - 獲取所有模型
+# POST /api/predict             - 模型預測
+# GET  /api/training_runs       - 訓練記錄
+# POST /api/backtest            - 執行回測
+```
+
+---
+
+## ⚙️ 配置說明
+
+### 環境變數 (.env)
+
+```bash
+# 資料庫類型（sqlite 或 postgresql）
+DB_TYPE=sqlite
+
+# SQLite 設定
+SQLITE_DB_PATH=logs/metrics.db
+
+# PostgreSQL 設定（Docker 使用）
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=rl_market
+POSTGRES_USER=rl_user
+POSTGRES_PASSWORD=rl_password
+
+# Dashboard Ports
+WEB_DASHBOARD_PORT=5555
+MONITORING_DASHBOARD_PORT=5556
+PRODUCTION_DASHBOARD_PORT=8080
+
+# Logging
+LOG_LEVEL=DEBUG
+```
+
+### 訓練配置 (configs/default.yaml)
+
+```yaml
+training:
+  algorithm: PPO
+  total_timesteps: 100000
+  n_steps: 2048
+  learning_rate: 0.0003
+  
+environment:
+  initial_balance: 10000
+  fee_rate: 0.001
+  max_position: 1.0
+  
+reward:
+  type: risk_adjusted
+  sharpe_weight: 0.3
+  drawdown_penalty: 0.2
+```
+
+---
+
+## 🐳 Docker 使用
+
+### 服務組成
+
+```yaml
+services:
+  postgres:              # PostgreSQL 資料庫
+  pgadmin:               # pgAdmin Web UI (http://localhost:5050)
+  dashboard_monitoring:  # Streamlit Dashboard
+  dashboard_web:         # Flask API Dashboard
+  dashboard_production:  # 生產 Dashboard
+  training:              # 訓練服務
+  nginx:                 # 反向代理
+```
+
+### 常用命令
+
+```bash
+# 啟動所有服務
+docker-compose up -d
+
+# 啟動特定服務
+docker-compose up -d postgres
+
+# 查看服務狀態
+docker-compose ps
+
+# 查看日誌
+docker-compose logs -f postgres
+
+# 停止所有服務
 docker-compose down
+
+# 停止並刪除所有資料
+docker-compose down -v
+
+# 重新構建
+docker-compose build --no-cache
 ```
 
-### 單獨構建
+### 埠號映射
 
-```bash
-# 構建鏡像
-docker build -t rl-market-making .
-
-# 運行 API 服務
-docker run -d \
-  -p 8000:8000 \
-  -v $(pwd)/models:/app/models \
-  -v $(pwd)/data:/app/data \
-  --name rl-api \
-  rl-market-making python production/cli.py serve
-
-# 運行監控面板
-docker run -d \
-  -p 8080:8080 \
-  -v $(pwd)/models:/app/models \
-  --name rl-dashboard \
-  rl-market-making python production/dashboard.py
-```
-
-### 服務地址
-
-- **API 文檔**: http://localhost:8000/docs
-- **監控面板**: http://localhost:8080
-- **健康檢查**: http://localhost:8000/health
+| 服務 | 內部埠號 | 外部埠號 | 說明 |
+|------|---------|---------|------|
+| PostgreSQL | 5432 | 5432 | 資料庫 |
+| pgAdmin | 80 | 5050 | 資料庫管理介面 |
+| Dashboard Monitoring | 8501 | 8501 | Streamlit |
+| Dashboard Web | 5000 | 5001 | Flask API |
+| Dashboard Production | 8502 | 8502 | 生產介面 |
+| Nginx | 80 | 8080 | 反向代理 |
 
 ---
 
-## 📚 完整文檔索引
+## 🔧 開發指南
 
-### 快速上手
-- [QUICKSTART.md](QUICKSTART.md) - 5 分鐘快速入門
-- [docs/QUICKSTART.md](docs/QUICKSTART.md) - 更詳細的快速開始指南
+### 安裝開發環境
 
-### 使用指南
-- [docs/USER_GUIDE_ZH.md](docs/USER_GUIDE_ZH.md) - 完整中文使用手冊
-- [CONFIG_GUIDE.md](CONFIG_GUIDE.md) - 配置文件詳解
-- [SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md) - 系統功能概覽
+```bash
+# 建立虛擬環境
+python -m venv .venv
+source .venv/bin/activate  # macOS/Linux
+# .venv\Scripts\activate   # Windows
 
-### 生產部署
-- [docs/PRODUCTION_GUIDE.md](docs/PRODUCTION_GUIDE.md) - 生產環境完整指南
-- [INTEGRATED_PIPELINE_README.md](INTEGRATED_PIPELINE_README.md) - 企業級多幣種系統
+# 安裝依賴
+pip install -r requirements.txt
 
-### 開發文檔
-- [DEVELOPMENT.md](DEVELOPMENT.md) - 開發者貢獻指南
-- [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) - 專案結構詳解
-- [CHANGELOG.md](CHANGELOG.md) - 版本更新歷史
-- [OPTIMIZATION_SUMMARY.md](OPTIMIZATION_SUMMARY.md) - 最新優化報告
+# 安裝測試工具
+pip install pytest pytest-cov
+```
 
-### 範例代碼
-- [examples/api_usage.py](examples/api_usage.py) - API 使用範例
-- [examples/complete_workflow.py](examples/complete_workflow.py) - 完整工作流程
+### 執行測試
+
+```bash
+# 方式 1: 使用測試腳本
+./run_tests.sh
+
+# 方式 2: 使用 Python 腳本
+python run_tests.py
+
+# 方式 3: 直接使用 pytest
+pytest tests/ -v
+
+# 執行特定測試
+pytest tests/test_production.py -v
+pytest tests/test_database.py -v
+
+# 生成覆蓋率報告
+pytest tests/ --cov=. --cov-report=html
+# 報告位置: htmlcov/index.html
+```
+
+**測試套件包含:**
+- ✅ 環境測試 (test_env_basic.py)
+- ✅ 獎勵函數測試 (test_reward.py)
+- ✅ 資料庫測試 (test_database.py)
+- ✅ 生產模組測試 (test_production.py)
+- ✅ 整合測試 (test_integration.py)
+- ✅ API 測試 (test_api.py)
+
+查看完整測試報告: [TEST_REPORT.md](TEST_REPORT.md)
+
+### 資料庫測試
+
+```bash
+# 測試 SQLite
+python scripts/test_database.py
+
+# 測試 PostgreSQL（需先啟動 Docker）
+docker-compose up -d postgres
+python scripts/test_postgres.py
+```
+
+### 新增交易對
+
+```python
+from utils.database import get_database
+
+db = get_database()
+
+# 插入新交易對
+db.execute("""
+    INSERT INTO symbols (symbol, base_currency, quote_currency)
+    VALUES ('ADAUSDT', 'ADA', 'USDT')
+    ON CONFLICT (symbol) DO NOTHING
+""")
+db.commit()
+```
+
+### 查詢訓練記錄
+
+```python
+from utils.database import get_database
+
+db = get_database()
+
+# 查詢最新 10 次訓練
+runs = db.fetchall("""
+    SELECT run_id, symbol, algorithm, final_pnl, status
+    FROM training_runs
+    ORDER BY start_time DESC
+    LIMIT 10
+""")
+
+for run in runs:
+    print(f"{run['run_id']}: {run['symbol']} | PnL: {run['final_pnl']}")
+```
 
 ---
 
-## 🤝 Contributing
+## 📈 效能指標
 
-歡迎貢獻！請查看 [DEVELOPMENT.md](DEVELOPMENT.md) 了解：
-- 開發環境設置
-- 代碼風格規範
-- Git 工作流程
-- 測試指南
+系統計算以下效能指標：
 
-### 快速貢獻步驟
+- **PnL (Profit and Loss)**: 總損益
+- **Total Return**: 總回報率
+- **Sharpe Ratio**: 夏普比率（風險調整回報）
+- **Sortino Ratio**: 索提諾比率
+- **Max Drawdown**: 最大回撤
+- **Win Rate**: 勝率
+- **Total Trades**: 總交易次數
+- **Avg Trade Duration**: 平均持倉時間
+
+---
+
+## 🛠️ 故障排除
+
+### 1. PostgreSQL 連接失敗
+
+**問題**: `connection refused` 或 `role does not exist`
+
+**解決**:
+```bash
+# 重新啟動 PostgreSQL 和 pgAdmin
+docker-compose down -v
+docker-compose up -d postgres pgadmin
+
+# 等待初始化完成（約 10-15 秒）
+sleep 15
+
+# 驗證資料庫
+docker-compose exec postgres psql -U rl_user -d rl_market -c "\dt"
+
+# 訪問 pgAdmin
+open http://localhost:5050
+```
+
+**使用 Docker 內建的 pgAdmin（推薦）：**
+- Host 使用 `postgres`（Docker 服務名稱）
+- 不需要 localhost 或 127.0.0.1
+
+### 2. 訓練無法開始
+
+**問題**: 找不到資料檔案
+
+**解決**:
+```bash
+# 下載資料
+python scripts/fetch_data.py --symbol BTCUSDT --days 365
+
+# 檢查資料
+ls -lh data/btc_usdt_1m*.csv
+```
+
+### 3. Dashboard 無法啟動
+
+**問題**: 埠號被佔用
+
+**解決**:
+```bash
+# 檢查佔用的埠號
+lsof -i :8501  # Streamlit
+lsof -i :5000  # Flask
+
+# 殺掉佔用的程序或修改 .env 中的埠號
+```
+
+### 4. Docker 記憶體不足
+
+**問題**: 容器頻繁重啟
+
+**解決**:
+```bash
+# 增加 Docker 記憶體配置（Docker Desktop → Settings → Resources）
+# 建議至少 4GB RAM
+
+# 或限制單個服務的記憶體使用
+docker-compose up -d --scale training=0  # 停用訓練服務
+```
+
+---
+
+## 🎓 使用範例
+
+### 完整訓練流程
 
 ```bash
-# 1. Fork 專案並克隆
-git clone https://github.com/your-username/RL_markey.git
-cd RL_markey
+# 1. 準備資料
+python scripts/fetch_data.py --symbol BTCUSDT --days 365
 
-# 2. 創建功能分支
+# 2. 訓練模型
+python scripts/train.py --symbol BTCUSDT --algorithm PPO --episodes 1000
+
+# 3. 評估模型
+python scripts/evaluate.py --model models/ppo_btc_best.zip
+
+# 4. 回測
+python -c "
+from utils.backtesting import BacktestEngine
+engine = BacktestEngine('models/ppo_btc_best.zip', 'data/btc_usdt_1m_2023.csv')
+results = engine.run()
+print(results)
+"
+
+# 5. 部署到生產
+python production/api.py
+```
+
+### 批次訓練多幣種
+
+```bash
+# 自動訓練並儲存最佳模型
+python auto_pipeline.py \
+    --symbols BTCUSDT ETHUSDT BNBUSDT SOLUSDT \
+    --algorithm PPO \
+    --version v2 \
+    --episodes 1000
+```
+
+### 查看訓練進度
+
+```bash
+# 方法 1: Streamlit Dashboard（即時監控）
+streamlit run monitoring_dashboard.py
+
+# 方法 2: 命令列查詢
+docker-compose exec postgres psql -U rl_user -d rl_market -c "
+SELECT 
+    run_id,
+    symbol,
+    algorithm,
+    status,
+    total_episodes,
+    final_pnl
+FROM v_latest_training_runs
+WHERE status = 'running'
+ORDER BY start_time DESC;"
+```
+
+---
+
+## 📦 依賴套件
+
+主要依賴：
+
+- **stable-baselines3** - RL 演算法實現
+- **gymnasium** - 環境標準
+- **numpy / pandas** - 數據處理
+- **streamlit** - 監控 Dashboard
+- **flask** - Web API
+- **psycopg2-binary** - PostgreSQL 連接
+- **sqlalchemy** - ORM 支援
+- **plotly** - 圖表視覺化
+
+完整列表請見 `requirements.txt`
+
+---
+
+## 🤝 貢獻
+
+歡迎提交 Issue 和 Pull Request！
+
+### 開發流程
+
+```bash
+# 1. Fork 專案
+# 2. 建立分支
 git checkout -b feature/your-feature
 
-# 3. 進行修改並測試
-pytest tests/
+# 3. 開發並測試
+python tests/test_*.py
 
 # 4. 提交更改
 git add .
@@ -589,25 +617,25 @@ git push origin feature/your-feature
 
 ---
 
-## 📝 License
+## 📝 授權
 
-MIT License - 詳見 [LICENSE](LICENSE) 文件
+MIT License - 詳見 LICENSE 檔案
 
 ---
 
 ## 🙏 致謝
 
-- [Stable-Baselines3](https://stable-baselines3.readthedocs.io/) - RL 演算法實現
-- [Gymnasium](https://gymnasium.farama.org/) - 環境標準
-- [FastAPI](https://fastapi.tiangolo.com/) - API 框架
-- [Binance](https://www.binance.com/) - 歷史數據來源
+- [Stable-Baselines3](https://stable-baselines3.readthedocs.io/)
+- [Gymnasium](https://gymnasium.farama.org/)
+- [FastAPI](https://fastapi.tiangolo.com/)
+- [Binance](https://www.binance.com/)
 
 ---
 
 <div align="center">
 
-**⭐ 如果這個專案對你有幫助，請給個 Star！**
+**Made with ❤️ by RL Market Team**
 
-Made with ❤️ by the RL Market Making Team
+⭐ 如果這個專案對你有幫助，請給個 Star！
 
 </div>

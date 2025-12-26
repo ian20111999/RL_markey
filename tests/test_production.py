@@ -125,6 +125,7 @@ def test_production_criteria_validation(temp_registry):
 
 def test_get_best_model(temp_registry, tmp_path):
     """Test best model selection"""
+    import time
     # Register multiple models with different scores
     for i, score in enumerate([60, 80, 70]):
         metrics = ModelMetrics(
@@ -149,6 +150,7 @@ def test_get_best_model(temp_registry, tmp_path):
             metrics=metrics,
             algorithm="SAC"
         )
+        time.sleep(0.01)  # Small delay to ensure unique timestamps
     
     # Get best model
     best_id = temp_registry.get_best_model()
@@ -160,6 +162,7 @@ def test_get_best_model(temp_registry, tmp_path):
 
 def test_list_models_filtering(temp_registry, tmp_path):
     """Test model listing with filters"""
+    import time
     # Register models with varying scores
     scores = [45, 65, 85]  # One fails, two pass production criteria
     
@@ -186,6 +189,7 @@ def test_list_models_filtering(temp_registry, tmp_path):
             metrics=metrics,
             algorithm="SAC"
         )
+        time.sleep(0.01)  # Small delay to ensure unique timestamps
     
     # List all models
     all_models = temp_registry.list_models()

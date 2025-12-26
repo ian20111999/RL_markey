@@ -1,0 +1,50 @@
+{
+  "summary": {
+    "files_removed": 0,
+    "dirs_removed": 385,
+    "space_freed_mb": 46.46,
+    "timestamp": "2025-12-16T16:24:06.774744"
+  },
+  "actions": [
+    {
+      "action": "\u6e05\u7406 Python \u7de9\u5b58",
+      "details": "\u91cb\u653e 46.49MB",
+      "timestamp": "2025-12-16T16:24:06.302720"
+    },
+    {
+      "action": "\u6e05\u7406\u7de9\u5b58\u76ee\u9304",
+      "details": "\u91cb\u653e 0.00MB",
+      "timestamp": "2025-12-16T16:24:06.303308"
+    },
+    {
+      "action": "\u6e05\u7406\u81e8\u6642\u6587\u4ef6",
+      "details": "\u91cb\u653e 0.00MB",
+      "timestamp": "2025-12-16T16:24:06.689196"
+    },
+    {
+      "action": "\u6e05\u7406\u820a\u65e5\u8a8c",
+      "details": "\u91cb\u653e 0.00MB",
+      "timestamp": "2025-12-16T16:24:06.689343"
+    },
+    {
+      "action": "\u6e05\u7406\u820a\u8a13\u7df4\u8a18\u9304",
+      "details": "\u522a\u9664 -1 \u500b\uff0c\u91cb\u653e 0.00MB",
+      "timestamp": "2025-12-16T16:24:06.689398"
+    },
+    {
+      "action": "\u6e05\u7406\u6aa2\u67e5\u9ede",
+      "details": "\u91cb\u653e 0.00MB",
+      "timestamp": "2025-12-16T16:24:06.689435"
+    },
+    {
+      "action": "\u512a\u5316\u6578\u64da\u5eab test_metrics.db",
+      "details": "\u7bc0\u7701 -0.01MB",
+      "timestamp": "2025-12-16T16:24:06.769221"
+    },
+    {
+      "action": "\u512a\u5316\u6578\u64da\u5eab metrics.db",
+      "details": "\u7bc0\u7701 -0.02MB",
+      "timestamp": "2025-12-16T16:24:06.774729"
+    }
+  ]
+}

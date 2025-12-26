@@ -51,7 +51,6 @@ models/*.pkl
 data/*.csv
 data/*.parquet
 !data/.gitkeep
-!data/btc_usdt_1m_2023.csv
 
 # Reports & HTML files
 *.html
@@ -75,3 +74,12 @@ models/leaderboard.csv
 
 # Production - Templates (but allow frontend dashboards)
 production/templates/
+
+# Frontend (Next.js)
+frontend-next/node_modules/
+frontend-next/.next/
+frontend-next/out/
+frontend-next/.env*.local
+
+# HPO Results
+hpo_results/

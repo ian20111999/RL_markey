@@ -1,0 +1,35 @@
+# Dockerfile for Training Service
+FROM python:3.10-slim
+
+# 設定工作目錄
+WORKDIR /app
+
+# 安裝系統依賴
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# 複製 requirements
+COPY requirements.txt .
+
+# 安裝 Python 套件
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 複製應用程式碼
+COPY . .
+
+# 建立必要的目錄
+RUN mkdir -p data models runs logs configs envs scripts utils
+
+# 設定環境變數
+ENV PYTHONUNBUFFERED=1
+ENV DB_TYPE=postgresql
+
+# 等待資料庫準備就緒的腳本
+COPY scripts/wait-for-db.sh /wait-for-db.sh
+RUN chmod +x /wait-for-db.sh
+
+# 預設命令：等待資料庫後執行訓練
+CMD ["/wait-for-db.sh", "python", "scripts/train.py"]

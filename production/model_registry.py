@@ -126,7 +126,7 @@ class ModelRegistry:
         Returns:
             model_id: Unique identifier for the registered model
         """
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         model_id = f"{algorithm.lower()}_{timestamp}"
         version = "v1.0.0"
         

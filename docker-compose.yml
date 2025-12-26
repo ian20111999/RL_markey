@@ -1,31 +1,212 @@
 version: '3.8'
 
 services:
-  rl-market-making:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: rl-market-making-api
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./models:/app/models
-      - ./data:/app/data
-      - ./runs:/app/runs
-      - ./logs:/app/logs
+  # PostgreSQL 資料庫
+  postgres:
+    image: postgres:15-alpine
+    container_name: rl-market-postgres
     environment:
-      - PYTHONUNBUFFERED=1
-      - LOG_LEVEL=INFO
+      POSTGRES_DB: ${POSTGRES_DB:-rl_market}
+      POSTGRES_USER: ${POSTGRES_USER:-rl_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rl_password}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rl_user} -d ${POSTGRES_DB:-rl_market}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - rl-market-network
+
+  # pgAdmin - Web UI for PostgreSQL
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: rl-market-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@rlmarket.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - rl-market-network
+
+  # Web Dashboard (Basic) - Port 5555
+  web-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+      args:
+        DASHBOARD_TYPE: web
+    container_name: rl-market-web-dashboard
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DB_TYPE=postgresql
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-rl_market}
+      - POSTGRES_USER=${POSTGRES_USER:-rl_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-rl_password}
+    ports:
+      - "5555:5555"
+    volumes:
+      - ./logs:/app/logs
+      - ./models:/app/models
+      - ./runs:/app/runs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5555/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 20s
+    networks:
+      - rl-market-network
+
+  # Monitoring Dashboard (Enhanced) - Port 5556
+  monitoring-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+      args:
+        DASHBOARD_TYPE: monitoring
+    container_name: rl-market-monitoring-dashboard
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DB_TYPE=postgresql
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-rl_market}
+      - POSTGRES_USER=${POSTGRES_USER:-rl_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-rl_password}
+    ports:
+      - "5556:5556"
+    volumes:
+      - ./logs:/app/logs
+      - ./models:/app/models
+      - ./runs:/app/runs
+      - ./plots:/app/plots
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5556/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - rl-market-network
+
+  # Production Dashboard - Port 8080
+  production-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+      args:
+        DASHBOARD_TYPE: production
+    container_name: rl-market-production-dashboard
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DB_TYPE=postgresql
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-rl_market}
+      - POSTGRES_USER=${POSTGRES_USER:-rl_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-rl_password}
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./logs:/app/logs
+      - ./models:/app/models
+      - ./production:/app/production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - rl-market-network
+
+  # Training Service (可選)
+  training:
+    build:
+      context: .
+      dockerfile: Dockerfile.training
+    container_name: rl-market-training
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DB_TYPE=postgresql
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-rl_market}
+      - POSTGRES_USER=${POSTGRES_USER:-rl_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-rl_password}
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./runs:/app/runs
+      - ./logs:/app/logs
+      - ./configs:/app/configs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"  # 訓練完成後不自動重啟
+    profiles:
+      - training  # 使用 profile 讓此服務可選
+    networks:
+      - rl-market-network
+
+  # Nginx (可選的前端靜態檔案伺服器)
+  nginx:
+    image: nginx:alpine
+    container_name: rl-market-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - web-dashboard
+      - monitoring-dashboard
+      - production-dashboard
+    restart: unless-stopped
+    profiles:
+      - frontend  # 使用 profile 讓此服務可選
+    networks:
+      - rl-market-network
 
 volumes:
-  models:
-  data:
-  runs:
-  logs:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  rl-market-network:
+    driver: bridge
+
